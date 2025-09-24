@@ -1,0 +1,71 @@
+services:
+  ragnar:
+    container_name: ragnar
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    environment:
+      RAGNAR_S3_BUCKET: modfin-ragnar
+      RAGNAR_S3_ENDPOINT: minio:9000
+      RAGNAR_S3_ACCESS_KEY: ragnaraccesskey
+      RAGNAR_S3_SECRET_KEY: ragnarsecretkey
+      RAGNAR_PRODUCTION: false
+      RAGNAR_DB_URI: "postgres://postgres:qwerty@postgres-ragnar/ragnar?sslmode=disable"
+      RAGNAR_BELLMAN_URI: "https://bellman.modularfinance.ai/v1"
+      RAGNAR_BELLMAN_NAME: "ragnar-local"
+    ports:
+      - "7100:8080"
+    volumes:
+      - gomod:/go/pkg/mod
+      - .:/ragnar
+
+  postgres-ragnar:
+    build:
+      dockerfile: Dockerfile.db
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: qwerty
+      POSTGRES_DB: ragnar
+    ports:
+      - "6789:5432"# expose db on port 5432, can connect GUI if wanted
+    volumes:
+      - db-data:/var/lib/postgresql/data # persistent local db
+
+  minio:
+    image: minio/minio:latest
+    container_name: ragnar-minio-db
+    restart: always
+    ports:
+      - "9000:9000"
+      - "9191:9090"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server --console-address ":9090" /data
+
+  backend-minio-setup:
+    image: minio/mc:latest
+    depends_on:
+      - 'minio'
+    entrypoint: >
+      /bin/sh -c "
+      until (/usr/bin/mc alias set myminio http://minio:9000 minioadmin minioadmin) do echo 'waiting for minio to come up...' && sleep 1; done;
+      /usr/bin/mc mb myminio/modfin-ragnar;
+      /usr/bin/mc admin user add myminio ragnaraccesskey ragnarsecretkey;
+      /usr/bin/mc admin policy attach myminio readwrite --user ragnaraccesskey;
+      exit 0;
+      "
+
+  swagger:
+    image: swaggerapi/swagger-ui
+    ports:
+      - "7101:8080"
+    environment:
+      URL: http://localhost:7100/.well-known/openapi.json
+
+volumes:
+  gomod:
+  db-data:
+
+

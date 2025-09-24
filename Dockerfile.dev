@@ -1,0 +1,17 @@
+FROM golang:1.25.1-alpine3.21
+
+RUN apk add --no-cache tzdata ca-certificates
+
+WORKDIR /
+
+RUN go install github.com/codeskyblue/fswatch@latest
+
+RUN apk add --no-cache build-base
+
+RUN apk add --no-cache poppler-utils pandoc #texttopdf + docx parsers
+
+RUN mkdir -p /ragnar
+WORKDIR /ragnar
+EXPOSE 7100
+
+CMD fswatch -config /fsw.yml

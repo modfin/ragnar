@@ -1,0 +1,18 @@
+desc: re builds go
+triggers:
+  - name: 'Go'
+    pattens:
+      - '**/*.go'
+    cmd: |-
+      go run \
+      -race \
+      ./cmd/ragnard/ragnard.go serve
+
+    shell: true
+    delay: 100ms
+    stop_timeout: 1000ms
+    signal: KILL
+    kill_signal: 'SIGTERM'
+watch_paths:
+  - .
+watch_depth: 20

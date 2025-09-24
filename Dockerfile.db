@@ -1,0 +1,28 @@
+FROM postgres:17
+
+RUN apt-get update
+RUN apt-get install -y postgresql-17-pgvector
+RUN apt-get install -y wget
+
+RUN cd /tmp
+RUN wget https://github.com/tensorchord/VectorChord-bm25/releases/download/0.2.1/postgresql-17-vchord-bm25_0.2.1-1_amd64.deb
+RUN dpkg -i postgresql-17-vchord-bm25_0.2.1-1_amd64.deb
+
+RUN cd /tmp
+RUN wget https://github.com/tensorchord/pg_tokenizer.rs/releases/download/0.1.0/postgresql-17-pg-tokenizer_0.1.0-1_amd64.deb
+RUN dpkg -i postgresql-17-pg-tokenizer_0.1.0-1_amd64.deb
+
+
+RUN echo 'ALTER SYSTEM SET shared_preload_libraries = "pg_tokenizer.so";' >> /docker-entrypoint-initdb.d/init-db.sql
+RUN echo 'ALTER SYSTEM SET search_path TO "$user", public, tokenizer_catalog;' >> /docker-entrypoint-initdb.d/init-db.sql
+
+
+
+
+# https://github.com/tensorchord/pg_tokenizer.rs
+# CREATE EXTENSION pg_tokenizer;
+
+#https://github.com/tensorchord/VectorChord-bm25
+#https://github.com/tensorchord/VectorChord-bm25?tab=readme-ov-file#usage
+#CREATE EXTENSION IF NOT EXISTS pg_tokenizer CASCADE;  -- for tokenizer
+#CREATE EXTENSION IF NOT EXISTS vchord_bm25 CASCADE;   -- for bm25 ranking
