@@ -57,12 +57,6 @@ services:
       exit 0;
       "
 
-  swagger:
-    image: swaggerapi/swagger-ui
-    ports:
-      - "7101:8080"
-    environment:
-      URL: http://localhost:7100/.well-known/openapi.json
 
 volumes:
   gomod:
