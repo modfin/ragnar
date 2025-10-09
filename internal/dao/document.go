@@ -225,14 +225,24 @@ func (d *DAO) DeleteDocument(ctx context.Context, tubname string, documentId str
 			return fmt.Errorf("error checking permission to delete document: %w", err)
 		}
 
-		q := `DELETE FROM "%s"."document"
-              WHERE tub_name = $1
- 				AND document_id = $2
-		  `
 		schema, err := tubToSchema(tubname)
 		if err != nil {
 			return fmt.Errorf("error getting schema: %w", err)
 		}
+		q := `DELETE FROM "%s"."chunk"
+              WHERE tub_name = $1
+ 				AND document_id = $2
+		  `
+		q = fmt.Sprintf(q, schema)
+		_, err = tx.Exec(q, tubname, documentId)
+		if err != nil {
+			return fmt.Errorf("error deleting chunks: %w", err)
+		}
+
+		q = `DELETE FROM "%s"."document"
+              WHERE tub_name = $1
+ 				AND document_id = $2
+		  `
 		q = fmt.Sprintf(q, schema)
 
 		r, err := tx.Exec(q, tubname, documentId)

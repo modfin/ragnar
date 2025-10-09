@@ -381,6 +381,76 @@ func TestGetTubDocumentWithOptionalMarkdownAndChunks(t *testing.T) {
 			t.Fatalf("expected chunk ID to be '%d', got '%d'", chunk.ChunkId, createdChunks[i].ChunkId)
 		}
 	}
+
+	// now update the document with new markdown & chunks
+	markdownContentReader = strings.NewReader(markdownContent + "\n\nThis is additional markdown content added in update.")
+	updatedChunks := []Chunk{
+		{
+			ChunkId: 0,
+			Content: "Updated chunk 0 content.",
+		},
+		{
+			ChunkId: 1,
+			Content: "Updated chunk 1 content.",
+		},
+		{
+			ChunkId: 2,
+			Content: "New chunk 2 content.",
+		},
+	}
+	updatedDoc, err := ragnarClient.UpdateTubDocumentWithOptionals(context.Background(), tubTestName, doc.DocumentId, mfnPressReleaseContent, markdownContentReader, updatedChunks, headers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fmt.Println(">>>updated document", updatedDoc)
+	if updatedDoc.DocumentId != doc.DocumentId {
+		t.Fatal(fmt.Sprintf("expected document ID to be set. expected: %s, got: %s", doc.DocumentId, updatedDoc.DocumentId))
+	}
+	statusErr = waitUntilStatusCompletedOrTimeout(tubTestName, doc.DocumentId, time.Minute)
+	if statusErr != nil {
+		t.Fatal("document is not completed after update")
+	}
+
+	markdown, err = ragnarClient.DownloadTubDocumentMarkdown(context.Background(), tubTestName, doc.DocumentId)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer markdown.Close()
+	mdContent, err = io.ReadAll(markdown)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(mdContent) != markdownContent+"\n\nThis is additional markdown content added in update." {
+		t.Fatalf("expected updated markdown content to be '%s', got '%s'", markdownContent+"\n\nThis is additional markdown content added in update.", string(mdContent))
+	}
+	createdChunks, err = ragnarClient.GetTubDocumentChunks(context.Background(), tubTestName, doc.DocumentId, 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(createdChunks) == 0 {
+		t.Fatal("expected chunks to be created")
+	}
+	for i, chunk := range updatedChunks {
+		if createdChunks[i].Content != chunk.Content {
+			t.Fatalf("expected updated chunk content to be '%s', got '%s'", chunk.Content, createdChunks[i].Content)
+		}
+		if createdChunks[i].ChunkId != chunk.ChunkId {
+			t.Fatalf("expected updated chunk ID to be '%d', got '%d'", chunk.ChunkId, createdChunks[i].ChunkId)
+		}
+	}
+
+	// now try and delete a document with markdown file and chunks
+	err = ragnarClient.DeleteTubDocument(context.Background(), tubTestName, doc.DocumentId)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fmt.Println(">>>document deleted successfully")
+
+	_, err = ragnarClient.GetTubDocument(context.Background(), tubTestName, doc.DocumentId)
+	if err == nil {
+		t.Fatal("expected error fetching deleted document")
+	}
+
 }
 
 func TestGetTubDocumentWithBadOptionals(t *testing.T) {

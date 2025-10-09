@@ -18,6 +18,9 @@ services:
     volumes:
       - gomod:/go/pkg/mod
       - .:/ragnar
+    depends_on:
+      - postgres-ragnar
+      - minio
 
   postgres-ragnar:
     build:

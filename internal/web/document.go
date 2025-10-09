@@ -386,7 +386,6 @@ func (app *Web) handleMultipartUpsert(w http.ResponseWriter, r *http.Request, ct
 
 	// Store chunks if provided
 	if len(chunks) > 0 {
-		app.log.Info("chunks provided but storage not implemented", "request_id", requestId, "chunks_size", len(chunks))
 		// Delete old chunks if any
 		err = app.db.DeleteChunks(ctx, doc)
 		if err != nil {
