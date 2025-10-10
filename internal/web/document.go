@@ -65,7 +65,7 @@ func (app *Web) UpsertDocument(w http.ResponseWriter, r *http.Request) {
 
 	requiredDocumentHeaders := tub.GetRequiredDocumentHeaders()
 	for _, h := range requiredDocumentHeaders {
-		if _, ok := headers[h]; !ok {
+		if headers.Get(h) == "" && headers.Get(headerPrefix+h) == "" {
 			app.log.Error("missing required document header", "header", h, "request_id", requestId)
 			http.Error(w, "missing required document header: "+h+", request_id: "+requestId, http.StatusBadRequest)
 			return
@@ -126,6 +126,7 @@ func (app *Web) handleSingleFileUpsert(w http.ResponseWriter, r *http.Request, c
 		return
 	}
 
+	isNewDocument := documentId == ""
 	doc := ragnar.Document{
 		DocumentId: documentId,
 		TubId:      tub.TubId,
@@ -141,7 +142,7 @@ func (app *Web) handleSingleFileUpsert(w http.ResponseWriter, r *http.Request, c
 		k = strings.ToLower(k)
 		if strings.HasPrefix(k, headerPrefix) {
 			k = strings.TrimPrefix(k, headerPrefix)
-			doc.Headers[k] = util.Ptr(strings.Join(v, ","))
+			doc.Headers[k] = util.Ptr(v[0])
 		}
 	}
 
@@ -156,7 +157,9 @@ func (app *Web) handleSingleFileUpsert(w http.ResponseWriter, r *http.Request, c
 	if err != nil {
 		app.log.Error("error putting document", "err", err, "request_id", requestId)
 		http.Error(w, "error putting document, request_id: "+requestId, http.StatusInternalServerError)
-		app.db.DeleteDocument(ctx, doc.TubName, doc.DocumentId) // try to rollback
+		if isNewDocument {
+			app.db.DeleteDocument(ctx, doc.TubName, doc.DocumentId) // try to rollback
+		}
 		return
 	}
 
@@ -164,8 +167,10 @@ func (app *Web) handleSingleFileUpsert(w http.ResponseWriter, r *http.Request, c
 	if err != nil {
 		app.log.Error("error scheduling document conversion", "err", err, "request_id", requestId)
 		http.Error(w, "error scheduling document conversion, request_id: "+requestId, http.StatusInternalServerError)
-		app.stor.DeleteDocument(ctx, doc.TubName, doc.DocumentId)
-		app.db.DeleteDocument(ctx, doc.TubName, doc.DocumentId)
+		if isNewDocument {
+			app.stor.DeleteDocument(ctx, doc.TubName, doc.DocumentId)
+			app.db.DeleteDocument(ctx, doc.TubName, doc.DocumentId)
+		}
 		return
 	}
 
@@ -334,6 +339,7 @@ func (app *Web) handleMultipartUpsert(w http.ResponseWriter, r *http.Request, ct
 		return
 	}
 
+	isNewDocument := documentId == ""
 	doc := ragnar.Document{
 		DocumentId: documentId,
 		TubId:      tub.TubId,
@@ -351,7 +357,7 @@ func (app *Web) handleMultipartUpsert(w http.ResponseWriter, r *http.Request, ct
 		k = strings.ToLower(k)
 		if strings.HasPrefix(k, headerPrefix) {
 			k = strings.TrimPrefix(k, headerPrefix)
-			doc.Headers[k] = util.Ptr(strings.Join(v, ","))
+			doc.Headers[k] = util.Ptr(v[0])
 		}
 	}
 
@@ -368,7 +374,9 @@ func (app *Web) handleMultipartUpsert(w http.ResponseWriter, r *http.Request, ct
 	if err != nil {
 		app.log.Error("error putting document", "err", err, "request_id", requestId)
 		http.Error(w, "error putting document, request_id: "+requestId, http.StatusInternalServerError)
-		app.db.DeleteDocument(ctx, doc.TubName, doc.DocumentId) // try to rollback
+		if isNewDocument {
+			app.db.DeleteDocument(ctx, doc.TubName, doc.DocumentId) // try to rollback
+		}
 		return
 	}
 
@@ -378,8 +386,10 @@ func (app *Web) handleMultipartUpsert(w http.ResponseWriter, r *http.Request, ct
 		if err != nil {
 			app.log.Error("error putting markdown", "err", err, "request_id", requestId)
 			http.Error(w, "error putting markdown, request_id: "+requestId, http.StatusInternalServerError)
-			app.stor.DeleteDocument(ctx, doc.TubName, doc.DocumentId)
-			app.db.DeleteDocument(ctx, doc.TubName, doc.DocumentId)
+			if isNewDocument {
+				app.stor.DeleteDocument(ctx, doc.TubName, doc.DocumentId)
+				app.db.DeleteDocument(ctx, doc.TubName, doc.DocumentId)
+			}
 			return
 		}
 	}
@@ -399,8 +409,10 @@ func (app *Web) handleMultipartUpsert(w http.ResponseWriter, r *http.Request, ct
 			if err != nil {
 				app.log.Error("error inserting chunk", "err", err, "request_id", requestId)
 				http.Error(w, "error inserting chunk, request_id: "+requestId, http.StatusInternalServerError)
-				app.stor.DeleteDocument(ctx, doc.TubName, doc.DocumentId)
-				app.db.DeleteDocument(ctx, doc.TubName, doc.DocumentId)
+				if isNewDocument {
+					app.stor.DeleteDocument(ctx, doc.TubName, doc.DocumentId)
+					app.db.DeleteDocument(ctx, doc.TubName, doc.DocumentId)
+				}
 				return
 			}
 		}
@@ -417,8 +429,10 @@ func (app *Web) handleMultipartUpsert(w http.ResponseWriter, r *http.Request, ct
 	if err != nil {
 		app.log.Error("error scheduling document conversion", "err", err, "request_id", requestId)
 		http.Error(w, "error scheduling document conversion, request_id: "+requestId, http.StatusInternalServerError)
-		app.stor.DeleteDocument(ctx, doc.TubName, doc.DocumentId)
-		app.db.DeleteDocument(ctx, doc.TubName, doc.DocumentId)
+		if isNewDocument {
+			app.stor.DeleteDocument(ctx, doc.TubName, doc.DocumentId)
+			app.db.DeleteDocument(ctx, doc.TubName, doc.DocumentId)
+		}
 		return
 	}
 

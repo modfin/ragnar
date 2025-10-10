@@ -166,9 +166,10 @@ func TestTubDocument(t *testing.T) {
 
 	content = strings.NewReader("This is updated document content")
 	headers = map[string]string{
-		"Content-Type":      "text/plain",
-		"x-ragnar-filename": "test.txt",
-		"x-ragnar-test":     "test-header",
+		"Content-Type":         "text/plain",
+		"x-ragnar-filename":    "test.txt",
+		"x-ragnar-test":        "test-header",
+		"x-ragnar-mfn-news-id": mfnId,
 	}
 	err = waitUntilStatusCompletedOrTimeout(tubTestName, doc.DocumentId, time.Minute)
 	if err != nil {
