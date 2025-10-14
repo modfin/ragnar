@@ -462,10 +462,10 @@ func (app *Web) GetDocuments(ctx context.Context) strut.Response[[]ragnar.Docume
 		offset = 0
 	}
 
-	filter := map[string]any{}
+	var filter ragnar.DocumentFilter
 	err = json.Unmarshal([]byte(filterstr), &filter)
 	if err != nil {
-		app.log.Error("Error unmarshalling json string", "err", err, "request_id", requestId)
+		app.log.Error("Error unmarshalling filter json", "err", err, "request_id", requestId)
 		return strut.RespondError[[]ragnar.Document](http.StatusBadRequest,
 			fmt.Sprintf("Invalid JSON format in 'filter' query parameter, request_id: %s", requestId))
 	}

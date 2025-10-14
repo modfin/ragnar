@@ -132,7 +132,11 @@ func TestTubDocument(t *testing.T) {
 	if fetchedDoc.DocumentId != doc.DocumentId {
 		t.Fatal("expected document ID to be set", fetchedDoc.DocumentId, doc.DocumentId)
 	}
-	fetchedDocs, err := ragnarClient.GetTubDocuments(context.Background(), tubTestName, map[string]any{"mfn-news-id": []string{mfnId}}, 1, 0)
+	// Test array filter (backward compatible)
+	arrayVal := "mfn-news-id"
+	fetchedDocs, err := ragnarClient.GetTubDocuments(context.Background(), tubTestName, DocumentFilter{
+		arrayVal: FilterValue{Array: []string{mfnId}},
+	}, 1, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +147,11 @@ func TestTubDocument(t *testing.T) {
 	if fetchedDocs[0].DocumentId != doc.DocumentId {
 		t.Fatal("expected document ID to be set", fetchedDocs[0].DocumentId, doc.DocumentId)
 	}
-	noMatchDocs, err := ragnarClient.GetTubDocuments(context.Background(), tubTestName, map[string]any{"mfn-news-id": "test-id-4321"}, 1, 0)
+	// Test simple equality filter (backward compatible)
+	simpleVal := "test-id-4321"
+	noMatchDocs, err := ragnarClient.GetTubDocuments(context.Background(), tubTestName, DocumentFilter{
+		arrayVal: FilterValue{Simple: &simpleVal},
+	}, 1, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -483,16 +491,17 @@ func TestSearchTubDocumentChunks(t *testing.T) {
 	if len(chunks) != 3 {
 		t.Fatal("expected chunks to be found")
 	}
-	// with doc filter
-	chunks, err = ragnarClient.SearchTubDocumentChunks(context.Background(), tubTestName, "planeras till onsdagen den 24 september 2025", map[string]any{"mfn-news-id": "eb8bb932-58b0-5aaa-9850-13029c3830d0"}, 3, 0)
+	// with doc filter (simple equality)
+	mfnNewsId := "eb8bb932-58b0-5aaa-9850-13029c3830d0"
+	chunks, err = ragnarClient.SearchTubDocumentChunks(context.Background(), tubTestName, "planeras till onsdagen den 24 september 2025", NewDocumentFilter().WithEqual("mfn-news-id", mfnNewsId), 3, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(chunks) != 3 {
 		t.Fatal("expected chunks to be found")
 	}
-	// with doc slice filter
-	chunks, err = ragnarClient.SearchTubDocumentChunks(context.Background(), tubTestName, "planeras till onsdagen den 24 september 2025", map[string]any{"mfn-news-id": []string{"eb8bb932-58b0-5aaa-9850-13029c3830d0"}}, 3, 0)
+	// with doc slice filter (array contains)
+	chunks, err = ragnarClient.SearchTubDocumentChunks(context.Background(), tubTestName, "planeras till onsdagen den 24 september 2025", NewDocumentFilter().WithIn("mfn-news-id", []string{"eb8bb932-58b0-5aaa-9850-13029c3830d0"}), 3, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -503,7 +512,9 @@ func TestSearchTubDocumentChunks(t *testing.T) {
 		fmt.Printf(">>>chunk %d: \n%+v\n\n", i, chunk.Content)
 	}
 	// with "empty" slice filter
-	chunks, err = ragnarClient.SearchTubDocumentChunks(context.Background(), tubTestName, "planeras till onsdagen den 24 september 2025", map[string]any{"mfn-news-id": []string{"does-not-exist"}}, 3, 0)
+	chunks, err = ragnarClient.SearchTubDocumentChunks(context.Background(), tubTestName, "planeras till onsdagen den 24 september 2025", DocumentFilter{
+		"mfn-news-id": FilterValue{Array: []string{"does-not-exist"}},
+	}, 3, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -527,6 +538,135 @@ func TestDownloadMarkdownDocument(t *testing.T) {
 		t.Fatal("could not read markdown body", err)
 	}
 	fmt.Printf(">>>document content\n'%s'", string(content))
+}
+
+func TestDocumentFilterOperators(t *testing.T) {
+	// Create test documents with different header values
+	content := strings.NewReader("Test document content")
+	headers1 := map[string]string{
+		"Content-Type":         "text/plain",
+		"x-ragnar-filename":    "test1.txt",
+		"x-ragnar-mfn-news-id": "test-filter-001",
+		"x-ragnar-priority":    "5",
+		"x-ragnar-created":     "2024-01-15",
+	}
+	doc1, err := ragnarClient.CreateTubDocument(context.Background(), tubTestName, content, headers1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ragnarClient.DeleteTubDocument(context.Background(), tubTestName, doc1.DocumentId)
+
+	content = strings.NewReader("Test document content 2")
+	headers2 := map[string]string{
+		"Content-Type":         "text/plain",
+		"x-ragnar-filename":    "test2.txt",
+		"x-ragnar-mfn-news-id": "test-filter-002",
+		"x-ragnar-priority":    "10",
+		"x-ragnar-created":     "2024-06-20",
+	}
+	doc2, err := ragnarClient.CreateTubDocument(context.Background(), tubTestName, content, headers2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ragnarClient.DeleteTubDocument(context.Background(), tubTestName, doc2.DocumentId)
+
+	content = strings.NewReader("Test document content 3")
+	headers3 := map[string]string{
+		"Content-Type":         "text/plain",
+		"x-ragnar-filename":    "test3.txt",
+		"x-ragnar-mfn-news-id": "test-filter-003",
+		"x-ragnar-priority":    "15",
+		"x-ragnar-created":     "2024-12-01",
+	}
+	doc3, err := ragnarClient.CreateTubDocument(context.Background(), tubTestName, content, headers3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ragnarClient.DeleteTubDocument(context.Background(), tubTestName, doc3.DocumentId)
+
+	// Test $gt (greater than) with integer type hint
+	gtValue := "10"
+
+	docs, err := ragnarClient.GetTubDocuments(context.Background(), tubTestName, NewDocumentFilter().WithCondition("priority", OpGreaterThan, gtValue, ValueTypeInteger), 10, 0)
+	if err != nil {
+		t.Fatal("error with $gt filter:", err)
+	}
+	if len(docs) != 1 {
+		t.Fatalf("expected 1 document with priority > 10, got %d", len(docs))
+	}
+	if docs[0].DocumentId != doc3.DocumentId {
+		t.Fatal("expected doc3 with priority 15")
+	}
+	fmt.Println(">>>$gt filter test passed (with integer type hint)")
+
+	// Test $gte (greater than or equal) with integer type hint
+	gteValue := "10"
+
+	docs, err = ragnarClient.GetTubDocuments(context.Background(), tubTestName, NewDocumentFilter().WithCondition("priority", OpGreaterThanOrEqual, gteValue, ValueTypeInteger), 10, 0)
+	if err != nil {
+		t.Fatal("error with $gte filter:", err)
+	}
+	if len(docs) != 2 {
+		t.Fatalf("expected 2 documents with priority >= 10, got %d", len(docs))
+	}
+	fmt.Println(">>>$gte filter test passed (with integer type hint)")
+
+	// Test $lt (less than) with integer type hint
+	ltValue := "10"
+	docs, err = ragnarClient.GetTubDocuments(context.Background(), tubTestName, NewDocumentFilter().WithCondition("priority", OpLessThan, ltValue, ValueTypeInteger), 10, 0)
+	if err != nil {
+		t.Fatal("error with $lt filter:", err)
+	}
+	if len(docs) != 1 {
+		t.Fatalf("expected 1 document with priority < 10, got %d", len(docs))
+	}
+	if docs[0].DocumentId != doc1.DocumentId {
+		t.Fatal("expected doc1 with priority 5")
+	}
+	fmt.Println(">>>$lt filter test passed (with integer type hint)")
+
+	// Test $lte (less than or equal) with integer type hint
+	lteValue := "10"
+
+	docs, err = ragnarClient.GetTubDocuments(context.Background(), tubTestName, NewDocumentFilter().WithCondition("priority", OpLessThanOrEqual, lteValue, ValueTypeInteger), 10, 0)
+	if err != nil {
+		t.Fatal("error with $lte filter:", err)
+	}
+	if len(docs) != 2 {
+		t.Fatalf("expected 2 documents with priority <= 10, got %d", len(docs))
+	}
+	fmt.Println(">>>$lte filter test passed (with integer type hint)")
+
+	// Test $eq (explicit equality) with integer type hint
+	eqValue := "10"
+
+	docs, err = ragnarClient.GetTubDocuments(context.Background(), tubTestName, NewDocumentFilter().WithCondition("priority", OpEqual, eqValue, ValueTypeInteger), 10, 0)
+	if err != nil {
+		t.Fatal("error with $eq filter:", err)
+	}
+	if len(docs) != 1 {
+		t.Fatalf("expected 1 document with priority == 10, got %d", len(docs))
+	}
+	if docs[0].DocumentId != doc2.DocumentId {
+		t.Fatal("expected doc2 with priority 10")
+	}
+	fmt.Println(">>>$eq filter test passed (with integer type hint)")
+
+	// Test combined filters (text comparison for dates, integer for priority)
+	gteDate := "2024-06-01"
+	ltPriority := "15"
+
+	docs, err = ragnarClient.GetTubDocuments(context.Background(), tubTestName, NewDocumentFilter().WithCondition("created", OpGreaterThanOrEqual, gteDate, ValueTypeText).WithCondition("priority", OpLessThan, ltPriority, ValueTypeInteger), 10, 0)
+	if err != nil {
+		t.Fatal("error with combined filters:", err)
+	}
+	if len(docs) != 1 {
+		t.Fatalf("expected 1 document with created >= 2024-06-01 and priority < 15, got %d", len(docs))
+	}
+	if docs[0].DocumentId != doc2.DocumentId {
+		t.Fatal("expected doc2")
+	}
+	fmt.Println(">>>combined filters test passed (text for dates, integer for priority)")
 }
 
 func TestDeleteTub(t *testing.T) {

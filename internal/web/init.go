@@ -120,9 +120,28 @@ func New(log *slog.Logger, db *dao.DAO, stor *storage.Storage, docket *docket.Do
 		"/tubs/{tub}/documents",
 		web.GetDocuments,
 		with.OperationId("list-documents"),
-		with.Description("Get documents in a tub with optional filtering"),
+		with.Description(`Get documents in a tub with optional filtering.
+
+Filter format supports:
+- Equality: {"field": "value"}
+- Contains (any): {"field": ["value1", "value2"]}
+- Greater than: {"field": {"$gt": "value"}}
+- Greater than or equal: {"field": {"$gte": "value"}}
+- Less than: {"field": {"$lt": "value"}}
+- Less than or equal: {"field": {"$lte": "value"}}
+- Explicit equality: {"field": {"$eq": "value"}}
+
+Type hints for numeric comparisons (optional):
+- Integer: {"field": {"$gt": "10", "type": "integer"}}
+- Numeric/Float: {"field": {"$gte": "3.14", "type": "numeric"}}
+- Text (default): {"field": {"$lt": "value"}} or {"field": {"$lt": "value", "type": "text"}}
+
+Without type hints, all comparisons are performed as text/string comparisons.
+Use "integer" or "numeric" type hints for proper numeric comparisons.
+
+Example: {"status": "active", "priority": {"$gte": "10", "type": "integer"}}`),
 		with.PathParam[string]("tub", "the document tub"),
-		with.QueryParam[string]("filter", "Optional filter query in flat JSON format"),
+		with.QueryParam[string]("filter", "Optional filter query in JSON format with support for comparison operators ($eq, $gt, $gte, $lt, $lte) and array contains"),
 		with.QueryParam[int]("limit", "Optional limit query"),
 		with.QueryParam[int]("offset", "Optional offset query"),
 		with.ResponseDescription(200, "List of found documents matching filter"),
