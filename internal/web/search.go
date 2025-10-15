@@ -14,6 +14,7 @@ import (
 )
 
 func (app *Web) SearchXNN(ctx context.Context) strut.Response[[]ragnar.Chunk] {
+	requestId := GetRequestID(ctx)
 
 	tubName := strut.PathParam(ctx, "tub")
 	tub, err := app.db.GetTub(ctx, tubName)
@@ -39,11 +40,12 @@ func (app *Web) SearchXNN(ctx context.Context) strut.Response[[]ragnar.Chunk] {
 		offset = 0
 	}
 
-	documentFilter := map[string]any{}
-	err = json.Unmarshal([]byte(filterStr), &documentFilter)
+	var filter ragnar.DocumentFilter
+	err = json.Unmarshal([]byte(filterStr), &filter)
 	if err != nil {
-		app.log.Error("Error unmarshalling json string", "err", err, "filter", filterStr)
-		return strut.RespondError[[]ragnar.Chunk](http.StatusBadRequest, fmt.Sprintf("Invalid JSON format in 'documentFilter' query parameter"))
+		app.log.Error("Error unmarshalling filter json", "err", err, "request_id", requestId)
+		return strut.RespondError[[]ragnar.Document](http.StatusBadRequest,
+			fmt.Sprintf("Invalid JSON format in 'filter' query parameter, request_id: %s", requestId))
 	}
 
 	app.log.Debug("SearchXNN", "tub", tub, "query", query, "limit", limit, "offset", offset)
@@ -63,7 +65,7 @@ func (app *Web) SearchXNN(ctx context.Context) strut.Response[[]ragnar.Chunk] {
 		return strut.RespondError[string](http.StatusInternalServerError, fmt.Sprintf("Failed to embed query"))
 	}
 
-	chunks, err := app.db.QueryChunkEmbeds(ctx, tub.TubName, embedModel, documentFilter, queryVector, limit, offset)
+	chunks, err := app.db.QueryChunkEmbeds(ctx, tub.TubName, embedModel, filter, queryVector, limit, offset)
 	if err != nil {
 		app.log.Error("failed to query chunk embeds", "error", err)
 		return strut.RespondError[string](http.StatusInternalServerError, fmt.Sprintf("Failed to query chunk embeds"))

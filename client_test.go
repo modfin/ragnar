@@ -511,6 +511,14 @@ func TestSearchTubDocumentChunks(t *testing.T) {
 	for i, chunk := range chunks {
 		fmt.Printf(">>>chunk %d: \n%+v\n\n", i, chunk.Content)
 	}
+	// with doc gte filter (string comparison)
+	chunks, err = ragnarClient.SearchTubDocumentChunks(context.Background(), tubTestName, "planeras till onsdagen den 24 september 2025", NewDocumentFilter().WithCondition("mfn-news-id", OpGreaterThanOrEqual, "1", ValueTypeText), 3, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(chunks) != 3 {
+		t.Fatal("expected chunks to be found")
+	}
 	// with "empty" slice filter
 	chunks, err = ragnarClient.SearchTubDocumentChunks(context.Background(), tubTestName, "planeras till onsdagen den 24 september 2025", DocumentFilter{
 		"mfn-news-id": FilterValue{Array: []string{"does-not-exist"}},

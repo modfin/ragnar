@@ -122,7 +122,7 @@ func (d *DAO) DeleteChunks(ctx context.Context, doc ragnar.Document) error {
 	})
 }
 
-func (d *DAO) QueryChunkEmbeds(ctx context.Context, tubname string, model embed.Model, documentFilter map[string]any, vector []float32, limit, offset int) ([]ragnar.Chunk, error) {
+func (d *DAO) QueryChunkEmbeds(ctx context.Context, tubname string, model embed.Model, documentFilter ragnar.DocumentFilter, vector []float32, limit, offset int) ([]ragnar.Chunk, error) {
 	var chunks []ragnar.Chunk
 
 	tubname = strings.ToLower(tubname)
@@ -154,15 +154,56 @@ WHERE chunk.tub_name = $1
 		args := []any{tubname, vectorToSQLArray(vector)}
 
 		i := len(args) + 1
-		for k, v := range documentFilter {
-			// check if v is slice or array
-			if _, ok := v.([]any); ok {
-				q += fmt.Sprintf(" AND document.headers -> $%d = ANY($%d) \n", i, i+1)
-			} else {
+		for fieldName, filterValue := range documentFilter {
+			fieldName = strings.ToLower(fieldName)
+
+			if filterValue.Simple != nil {
+				// Simple equality check
 				q += fmt.Sprintf(" AND document.headers -> $%d = $%d \n", i, i+1)
+				args = append(args, fieldName, *filterValue.Simple)
+				i += 2
+			} else if filterValue.Array != nil {
+				// Array contains check (ANY operator)
+				q += fmt.Sprintf(" AND document.headers -> $%d = ANY($%d) \n", i, i+1)
+				args = append(args, fieldName, filterValue.Array)
+				i += 2
+			} else if filterValue.Condition != nil {
+				// Operator-based condition
+				// Determine the cast expression based on value type
+				leftSide := fmt.Sprintf("document.headers -> $%d", i)
+				rightSide := fmt.Sprintf("$%d", i+1)
+
+				// Apply type casting for numeric comparisons
+				switch filterValue.Condition.ValueType {
+				case ragnar.ValueTypeInteger:
+					leftSide = fmt.Sprintf("CAST(document.headers -> $%d AS INTEGER)", i)
+					rightSide = fmt.Sprintf("CAST($%d AS INTEGER)", i+1)
+				case ragnar.ValueTypeNumeric:
+					leftSide = fmt.Sprintf("CAST(document.headers -> $%d AS NUMERIC)", i)
+					rightSide = fmt.Sprintf("CAST($%d AS NUMERIC)", i+1)
+					// ValueTypeText or default - no casting needed
+				}
+
+				switch filterValue.Condition.Operator {
+				case ragnar.OpEqual:
+					q += fmt.Sprintf(" AND %s = %s \n", leftSide, rightSide)
+				case ragnar.OpGreaterThan:
+					q += fmt.Sprintf(" AND %s > %s \n", leftSide, rightSide)
+				case ragnar.OpGreaterThanOrEqual:
+					q += fmt.Sprintf(" AND %s >= %s \n", leftSide, rightSide)
+				case ragnar.OpLessThan:
+					q += fmt.Sprintf(" AND %s < %s \n", leftSide, rightSide)
+				case ragnar.OpLessThanOrEqual:
+					q += fmt.Sprintf(" AND %s <= %s \n", leftSide, rightSide)
+				case ragnar.OpIn:
+					// For $in operator with a single value in condition
+					q += fmt.Sprintf(" AND %s = %s \n", leftSide, rightSide)
+				default:
+					return fmt.Errorf("unsupported operator: %s", filterValue.Condition.Operator)
+				}
+				args = append(args, fieldName, filterValue.Condition.Value)
+				i += 2
 			}
-			args = append(args, strings.ToLower(k), v)
-			i += 2
 		}
 
 		q += fmt.Sprintf("\nORDER BY chunk.\"%s\" <-> CAST($2 AS VECTOR(%d))", colName, model.OutputDimensions)
