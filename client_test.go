@@ -135,7 +135,7 @@ func TestTubDocument(t *testing.T) {
 	// Test array filter (backward compatible)
 	arrayVal := "mfn-news-id"
 	fetchedDocs, err := ragnarClient.GetTubDocuments(context.Background(), tubTestName, DocumentFilter{
-		arrayVal: FilterValue{Array: []string{mfnId}},
+		arrayVal: []FilterValue{{Array: []string{mfnId}}},
 	}, 1, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -150,7 +150,7 @@ func TestTubDocument(t *testing.T) {
 	// Test simple equality filter (backward compatible)
 	simpleVal := "test-id-4321"
 	noMatchDocs, err := ragnarClient.GetTubDocuments(context.Background(), tubTestName, DocumentFilter{
-		arrayVal: FilterValue{Simple: &simpleVal},
+		arrayVal: []FilterValue{{Simple: &simpleVal}},
 	}, 1, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -512,7 +512,7 @@ func TestSearchTubDocumentChunks(t *testing.T) {
 		fmt.Printf(">>>chunk %d: \n%+v\n\n", i, chunk.Content)
 	}
 	// with doc gte filter (string comparison)
-	chunks, err = ragnarClient.SearchTubDocumentChunks(context.Background(), tubTestName, "planeras till onsdagen den 24 september 2025", NewDocumentFilter().WithCondition("mfn-news-id", OpGreaterThanOrEqual, "1", ValueTypeText), 3, 0)
+	chunks, err = ragnarClient.SearchTubDocumentChunks(context.Background(), tubTestName, "planeras till onsdagen den 24 september 2025", NewDocumentFilter().WithCondition("mfn-news-id", OpGreaterThanOrEqual, "1", ValueTypeText).WithCondition("mfn-news-id", OpLessThanOrEqual, "FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF", ValueTypeText), 3, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -521,7 +521,7 @@ func TestSearchTubDocumentChunks(t *testing.T) {
 	}
 	// with "empty" slice filter
 	chunks, err = ragnarClient.SearchTubDocumentChunks(context.Background(), tubTestName, "planeras till onsdagen den 24 september 2025", DocumentFilter{
-		"mfn-news-id": FilterValue{Array: []string{"does-not-exist"}},
+		"mfn-news-id": []FilterValue{{Array: []string{"does-not-exist"}}},
 	}, 3, 0)
 	if err != nil {
 		t.Fatal(err)

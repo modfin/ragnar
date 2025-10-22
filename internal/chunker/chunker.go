@@ -53,6 +53,13 @@ func GetTextSplitterFromTubSettings(settings pgtype.Hstore) textsplitter.TextSpl
 	}
 	ops = append(ops, textsplitter.WithHeadingHierarchy(headingHierarchy))
 
+	joinTableRows := true // Default to only chunk in paragraphs in markdown
+	joinTableRowsStr, ok := settings["join_table_rows"]
+	if ok && joinTableRowsStr != nil {
+		joinTableRows = *joinTableRowsStr == "true"
+	}
+	ops = append(ops, textsplitter.WithJoinTableRows(joinTableRows))
+
 	switch *splitter {
 	case "token":
 		return textsplitter.NewTokenSplitter(ops...)
