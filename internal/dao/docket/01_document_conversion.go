@@ -14,49 +14,51 @@ func (d *Docket) ScheduleDocumentConversion(doc ragnar.Document) error {
 
 func documentConversion(d *Docket) func(pqdocket.RunningTask) error {
 	return func(task pqdocket.RunningTask) error {
-		d.log.Info("starting conversion of document", "id", task.TaskId())
+		l := d.log.With("task", task.TaskId(), "func", task.Func())
+		l.Info("starting conversion of document")
 
 		var doc ragnar.Document
 		err := task.BindMetadata(&doc)
 		if err != nil {
-			d.log.Error("failed to bind metadata", "error", err, "task", task.TaskId())
+			l.Error("failed to bind metadata", "error", err)
 			return fmt.Errorf("as documentConversion pqdocket.BindMetadata: %w", err)
 		}
+		l = l.With("document_id", doc.DocumentId)
 
 		file, err := d.stor.GetDocument(context.Background(), doc.TubName, doc.DocumentId)
 		if err != nil {
-			d.log.Error("failed to get document", "error", err, "task", task.TaskId())
+			l.Error("failed to get document", "error", err)
 			return fmt.Errorf("as documentConversion failed to get document: %w", err)
 		}
 		defer file.Close()
 
 		contentType := doc.Headers["content-type"]
 		if contentType == nil {
-			d.log.Error("document missing content-type header", "task", task.TaskId())
+			l.Error("document missing content-type header")
 			return fmt.Errorf("as documentConversion document missing content-type header")
 		}
 		contentDisposition := doc.Headers["content-disposition"]
 		if contentDisposition == nil {
-			d.log.Error("document missing content-disposition header", "task", task.TaskId())
+			l.Error("document missing content-disposition header")
 			return fmt.Errorf("as documentConversion document missing content-disposition header")
 		}
 
-		md, err := document.ConvertToMarkdown(d.log, file, *contentType, *contentDisposition)
+		md, err := document.ConvertToMarkdown(l, file, *contentType, *contentDisposition)
 		if err != nil {
-			d.log.Error("failed to convert to markdown", "error", err, "task", task.TaskId())
+			l.Error("failed to convert to markdown", "error", err)
 			return fmt.Errorf("as documentConversion failed to convert to markdown: %w", err)
 		}
 
 		// Fuck, spent all this time on making it a stream...
 		err = d.stor.PutDocumentMarkdown(context.Background(), doc.TubName, doc.DocumentId, md, -1, doc.Headers)
 		if err != nil {
-			d.log.Error("failed to put document", "error", err, "task", task.TaskId())
+			l.Error("failed to put document", "error", err)
 			return fmt.Errorf("as documentConversion failed to put document: %w", err)
 		}
 
 		err = d.ScheduleDocumentChunking(doc)
 		if err != nil {
-			d.log.Error("failed to schedule chunking", "error", err, "task", task.TaskId())
+			l.Error("failed to schedule chunking", "error", err)
 			return fmt.Errorf("as documentConversion failed to schedule chunking: %w", err)
 		}
 

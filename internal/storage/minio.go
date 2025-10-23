@@ -8,6 +8,7 @@ import (
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"io"
 	"log/slog"
+	"strings"
 )
 
 type Config struct {
@@ -69,7 +70,7 @@ func (s *Storage) PutDocument(ctx context.Context, tub string, documentId string
 			putObject.ContentDisposition = *v
 			continue
 		}
-		meta[k] = *v
+		meta[k] = sanitizeHeaderValue(*v)
 	}
 	putObject.UserMetadata = meta
 
@@ -103,13 +104,13 @@ func (s *Storage) PutDocumentMarkdown(ctx context.Context, tub string, documentI
 		if k == "content-disposition" {
 			continue
 		}
-		meta[k] = *v
+		meta[k] = sanitizeHeaderValue(*v)
 	}
 	putObject.UserMetadata = meta
 
 	_, err := s.client.PutObject(ctx, bucket, path, file, objectSize, putObject)
 	if err != nil {
-		return fmt.Errorf("error storing document, %s/%s: %w", tub, documentId, err)
+		return fmt.Errorf("error storing document markdown, %s/%s: %w", tub, documentId, err)
 	}
 
 	s.log.Info("successfully uploaded", "bucket", bucket, "path", path, "size", objectSize)
@@ -189,4 +190,16 @@ func (s *Storage) DeleteDocument(ctx context.Context, tub string, documentId str
 		return fmt.Errorf("failed to delete object: %w", err)
 	}
 	return nil
+}
+
+func sanitizeHeaderValue(s string) string {
+	replacement := ' '
+
+	return strings.Map(func(r rune) rune {
+		// If it's a printable ASCII character, keep it.
+		if r >= ' ' && r <= '~' {
+			return r
+		}
+		return replacement
+	}, s)
 }

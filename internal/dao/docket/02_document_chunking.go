@@ -15,35 +15,37 @@ func (d *Docket) ScheduleDocumentChunking(doc ragnar.Document) error {
 
 func chunkDocument(d *Docket) func(pqdocket.RunningTask) error {
 	return func(task pqdocket.RunningTask) error {
-		d.log.Info("starting chunking document", "id", task.TaskId())
+		l := d.log.With("task", task.TaskId(), "func", task.Func())
+		l.Info("starting chunking document")
 
 		var doc ragnar.Document
 		err := task.BindMetadata(&doc)
 		if err != nil {
-			d.log.Error("failed to bind metadata", "error", err, "task", task.TaskId())
+			l.Error("failed to bind metadata", "error", err)
 			return fmt.Errorf("chunkDocument, could not bind metadata: %w", err)
 		}
+		l = l.With("document_id", doc.DocumentId)
 
 		tub, err := d.db.InternalGetTub(doc.TubId)
 
 		// DELETING ALL OLD CHUNKS
 		err = d.db.InternalDeleteChunks(doc)
 		if err != nil {
-			d.log.Error("failed to delete chunks", "error", err, "task", task.TaskId())
+			l.Error("failed to delete chunks", "error", err)
 			return fmt.Errorf("chunkDocument, could not delete chunks: %w", err)
 		}
 
 		// GETTING MARKDOWN OF DOCUMENT
 		reader, err := d.stor.GetDocumentMarkdown(context.Background(), doc.TubName, doc.DocumentId)
 		if err != nil {
-			d.log.Error("failed to get document markdown", "error", err, "task", task.TaskId())
+			l.Error("failed to get document markdown", "error", err)
 			return fmt.Errorf("chunkDocument, could not get md version of document: %w", err)
 		}
 		defer reader.Close()
 
 		md, err := io.ReadAll(reader)
 		if err != nil {
-			d.log.Error("failed to read document markdown", "error", err, "task", task.TaskId())
+			l.Error("failed to read document markdown", "error", err)
 			return fmt.Errorf("chunkDocument, could not read md version of document: %w", err)
 		}
 
@@ -51,7 +53,7 @@ func chunkDocument(d *Docket) func(pqdocket.RunningTask) error {
 
 		chunks, err := splitter.SplitText(string(md))
 		if err != nil {
-			d.log.Error("failed to split document", "error", err, "task", task.TaskId())
+			l.Error("failed to split document", "error", err)
 			return fmt.Errorf("chunkDocument, could not split document: %w", err)
 		}
 
@@ -72,14 +74,14 @@ func chunkDocument(d *Docket) func(pqdocket.RunningTask) error {
 				Content:    chunk,
 			})
 			if err != nil {
-				d.log.Error("failed to insert chunk", "error", err, "task", task.TaskId())
+				l.Error("failed to insert chunk", "error", err)
 				return fmt.Errorf("chunkDocument, could not insert chunk: %w", err)
 			}
 		}
 
 		err = d.ScheduleChunkEmbedding(doc)
 		if err != nil {
-			d.log.Error("failed to schedule chunk embedding", "error", err, "task", task.TaskId())
+			l.Error("failed to schedule chunk embedding", "error", err)
 			return fmt.Errorf("chunkDocument, could not schedule chunk embedding: %w", err)
 		}
 
