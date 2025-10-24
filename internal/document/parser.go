@@ -25,7 +25,7 @@ func ConvertToMarkdown(log *slog.Logger, reader io.Reader, contentType, contentD
 		return extractFromJson(reader)
 	case "text/plain":
 		log.Debug("content detected as plain text.")
-		return io.MultiReader(bytes.NewBufferString("```text\n"), reader, bytes.NewBufferString("\n```")), nil
+		return reader, nil
 	case "text/html":
 		log.Debug("content detected as html.")
 		return extractFromHTML(reader)

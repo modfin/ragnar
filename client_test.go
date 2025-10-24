@@ -124,6 +124,11 @@ func TestTubDocument(t *testing.T) {
 	if *doc.Headers["filename"] != "test.txt" {
 		t.Fatalf("expected filename header to be 'test.txt', got '%v'", doc.Headers["filename"])
 	}
+	content.Seek(0, 0)
+	doc, err = ragnarClient.UpdateTubDocument(context.Background(), tubTestName, doc.DocumentId, content, headers)
+	if err != nil {
+		t.Fatal(err)
+	}
 	fetchedDoc, err := ragnarClient.GetTubDocument(context.Background(), tubTestName, doc.DocumentId)
 	if err != nil {
 		t.Fatal(err)
@@ -134,9 +139,7 @@ func TestTubDocument(t *testing.T) {
 	}
 	// Test array filter (backward compatible)
 	arrayVal := "mfn-news-id"
-	fetchedDocs, err := ragnarClient.GetTubDocuments(context.Background(), tubTestName, DocumentFilter{
-		arrayVal: []FilterValue{{Array: []string{mfnId}}},
-	}, 1, 0)
+	fetchedDocs, err := ragnarClient.GetTubDocuments(context.Background(), tubTestName, NewDocumentFilter().WithIn(arrayVal, []string{mfnId}), 1, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,9 +152,7 @@ func TestTubDocument(t *testing.T) {
 	}
 	// Test simple equality filter (backward compatible)
 	simpleVal := "test-id-4321"
-	noMatchDocs, err := ragnarClient.GetTubDocuments(context.Background(), tubTestName, DocumentFilter{
-		arrayVal: []FilterValue{{Simple: &simpleVal}},
-	}, 1, 0)
+	noMatchDocs, err := ragnarClient.GetTubDocuments(context.Background(), tubTestName, NewDocumentFilter().WithIn(arrayVal, []string{simpleVal}), 1, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -213,6 +214,10 @@ func TestTubDocument(t *testing.T) {
 		t.Fatalf("expected downloaded content to be 'This is updated document content', got '%s'", string(downloadedContent))
 	}
 	fmt.Println(">>>downloaded content", string(downloadedContent))
+	err = waitUntilStatusCompletedOrTimeout(tubTestName, doc.DocumentId, time.Minute)
+	if err != nil {
+		t.Fatal("document is not completed")
+	}
 
 	err = ragnarClient.DeleteTubDocument(context.Background(), tubTestName, doc.DocumentId)
 	if err != nil {
@@ -350,7 +355,20 @@ func TestGetTubDocumentWithOptionalMarkdownAndChunks(t *testing.T) {
 			Content: "K33’s Bitcoin Treasury strategy reflects both the company’s conviction in\nBitcoin’s long-term value proposition and its intention to establish a strong\nposition in the asset to unlock operational alpha in its broker business.",
 		},
 	}
+	// seek
+	mfnPressReleaseContent.Seek(0, io.SeekStart)
+	markdownContentReader.Seek(0, io.SeekStart)
 	doc, err := ragnarClient.CreateTubDocumentWithOptionals(context.Background(), tubTestName, mfnPressReleaseContent, markdownContentReader, chunks, headers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if doc.Headers["mfn-news-id"] == nil || *doc.Headers["mfn-news-id"] != "eb8bb932-58b0-5aaa-9850-13029c3830d0" {
+		t.Fatal("expected mfn-news-id header to be set")
+	}
+	// upload again to test hash checking
+	mfnPressReleaseContent.Seek(0, io.SeekStart)
+	markdownContentReader.Seek(0, io.SeekStart)
+	doc, err = ragnarClient.UpdateTubDocumentWithOptionals(context.Background(), tubTestName, doc.DocumentId, mfnPressReleaseContent, markdownContentReader, chunks, headers)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -472,7 +490,6 @@ func TestGetTubDocumentWithBadOptionals(t *testing.T) {
 	}
 	_, err := ragnarClient.CreateTubDocumentWithOptionals(context.Background(), tubTestName, mfnPressReleaseContent, nil, []Chunk{{
 		ChunkId: 0,
-		Context: "",
 		Content: "123321",
 	}}, headers)
 	if err == nil {

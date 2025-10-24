@@ -1,11 +1,14 @@
 package docket
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"github.com/modfin/pqdocket"
 	"github.com/modfin/ragnar"
 	"github.com/modfin/ragnar/internal/document"
+	"github.com/modfin/ragnar/internal/util"
+	"io"
 )
 
 func (d *Docket) ScheduleDocumentConversion(doc ragnar.Document) error {
@@ -49,8 +52,27 @@ func documentConversion(d *Docket) func(pqdocket.RunningTask) error {
 			return fmt.Errorf("as documentConversion failed to convert to markdown: %w", err)
 		}
 
+		data, err := io.ReadAll(md)
+		if err != nil {
+			l.Error("failed to read markdown", "error", err)
+			return fmt.Errorf("as documentConversion failed to read markdown: %w", err)
+		}
+		seekableReader := bytes.NewReader(data)
+
+		markdownHash, err := util.HashReaderSHA256(seekableReader)
+		if err != nil {
+			l.Error("failed to hash markdown", "error", err)
+			return fmt.Errorf("as documentConversion failed to hash markdown: %w", err)
+		}
+		// Reset reader after hashing
+		_, err = seekableReader.Seek(0, 0)
+		if err != nil {
+			l.Error("failed to seek markdown reader", "error", err)
+			return fmt.Errorf("as documentConversion failed to seek markdown reader: %w", err)
+		}
+
 		// Fuck, spent all this time on making it a stream...
-		err = d.stor.PutDocumentMarkdown(context.Background(), doc.TubName, doc.DocumentId, md, -1, doc.Headers)
+		_, err = d.stor.PutDocumentMarkdown(context.Background(), doc.TubName, doc.DocumentId, seekableReader, -1, doc.Headers, markdownHash)
 		if err != nil {
 			l.Error("failed to put document", "error", err)
 			return fmt.Errorf("as documentConversion failed to put document: %w", err)

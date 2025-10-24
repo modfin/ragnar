@@ -69,7 +69,7 @@ func (d *DAO) InternalInsertChunk(chunk ragnar.Chunk) error {
 		return fmt.Errorf("at InternalInsertChunk, error getting schema from tubname, %s: %w", chunk.TubName, err)
 	}
 
-	q := `INSERT INTO "%s"."chunk" (chunk_id, document_id, tub_id, tub_name, content) VALUES ($1, $2, $3, $4, $5, $6)`
+	q := `INSERT INTO "%s"."chunk" (chunk_id, document_id, tub_id, tub_name, content) VALUES ($1, $2, $3, $4, $5)`
 
 	q = fmt.Sprintf(q, schema)
 

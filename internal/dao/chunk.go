@@ -30,6 +30,7 @@ func (d *DAO) GetChunks(ctx context.Context, tubname string, documentId string, 
 			  FROM "%s".chunk
 			  WHERE tub_name = $1
 			    AND document_id = $2
+			  ORDER BY chunk_id
 			    LIMIT $3
 			    OFFSET $4
 		`

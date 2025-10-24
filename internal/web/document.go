@@ -1,6 +1,7 @@
 package web
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -125,6 +126,13 @@ func (web *Web) handleSingleFileUpsert(w http.ResponseWriter, r *http.Request, c
 		http.Error(w, fmt.Sprintf("Request body is too large, max %d bytes", web.cfg.HttpUploadLimit-1), http.StatusBadRequest)
 		return
 	}
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		web.log.Error("failed to read request body", "err", err, "request_id", requestId)
+		http.Error(w, "failed to read request body, request_id: "+requestId, http.StatusInternalServerError)
+		return
+	}
+	seekableReader := bytes.NewReader(data)
 
 	isNewDocument := documentId == ""
 	doc := ragnar.Document{
@@ -138,6 +146,20 @@ func (web *Web) handleSingleFileUpsert(w http.ResponseWriter, r *http.Request, c
 		},
 	}
 
+	documentHash, err := util.HashReaderSHA256(seekableReader)
+	if err != nil {
+		web.log.Error("failed to hash document", "err", err, "request_id", requestId)
+		http.Error(w, "failed to hash document, request_id: "+requestId, http.StatusInternalServerError)
+		return
+	}
+	// Reset reader after hashing
+	_, err = seekableReader.Seek(0, 0)
+	if err != nil {
+		web.log.Error("failed to seek to beginning of reader after hashing", "err", err, "request_id", requestId)
+		http.Error(w, "failed to seek to beginning of reader after hashing, request_id: "+requestId, http.StatusInternalServerError)
+		return
+	}
+
 	for k, v := range headers {
 		k = strings.ToLower(k)
 		if strings.HasPrefix(k, headerPrefix) {
@@ -146,14 +168,14 @@ func (web *Web) handleSingleFileUpsert(w http.ResponseWriter, r *http.Request, c
 		}
 	}
 
-	doc, err := web.db.UpsertDocument(ctx, doc)
+	doc, err = web.db.UpsertDocument(ctx, doc)
 	if err != nil {
 		web.log.Error("error creating document", "err", err, "request_id", requestId)
 		http.Error(w, "error creating document, request_id: "+requestId, http.StatusInternalServerError)
 		return
 	}
 
-	err = web.stor.PutDocument(ctx, doc.TubName, doc.DocumentId, reader, length, doc.Headers)
+	documentChanged, err := web.stor.PutDocument(ctx, doc.TubName, doc.DocumentId, seekableReader, length, doc.Headers, documentHash)
 	if err != nil {
 		web.log.Error("error putting document", "err", err, "request_id", requestId)
 		http.Error(w, "error putting document, request_id: "+requestId, http.StatusInternalServerError)
@@ -163,15 +185,17 @@ func (web *Web) handleSingleFileUpsert(w http.ResponseWriter, r *http.Request, c
 		return
 	}
 
-	err = web.docket.ScheduleDocumentConversion(doc)
-	if err != nil {
-		web.log.Error("error scheduling document conversion", "err", err, "request_id", requestId)
-		http.Error(w, "error scheduling document conversion, request_id: "+requestId, http.StatusInternalServerError)
-		if isNewDocument {
-			web.stor.DeleteDocument(ctx, doc.TubName, doc.DocumentId)
-			web.db.DeleteDocument(ctx, doc.TubName, doc.DocumentId)
+	if documentChanged {
+		err = web.docket.ScheduleDocumentConversion(doc)
+		if err != nil {
+			web.log.Error("error scheduling document conversion", "err", err, "request_id", requestId)
+			http.Error(w, "error scheduling document conversion, request_id: "+requestId, http.StatusInternalServerError)
+			if isNewDocument {
+				web.stor.DeleteDocument(ctx, doc.TubName, doc.DocumentId)
+				web.db.DeleteDocument(ctx, doc.TubName, doc.DocumentId)
+			}
+			return
 		}
-		return
 	}
 
 	w.WriteHeader(http.StatusCreated)
@@ -361,8 +385,22 @@ func (web *Web) handleMultipartUpsert(w http.ResponseWriter, r *http.Request, ct
 		}
 	}
 
+	documentHash, err := util.HashReaderSHA256(fileReader)
+	if err != nil {
+		web.log.Error("failed to hash document", "err", err, "request_id", requestId)
+		http.Error(w, "failed to hash document, request_id: "+requestId, http.StatusInternalServerError)
+		return
+	}
+	// Reset fileReader after hashing
+	_, err = fileReader.(io.Seeker).Seek(0, 0)
+	if err != nil {
+		web.log.Error("failed to seek to beginning of reader after hashing", "err", err, "request_id", requestId)
+		http.Error(w, "failed to seek to beginning of reader after hashing, request_id: "+requestId, http.StatusInternalServerError)
+		return
+	}
+
 	// Store the document
-	doc, err := web.db.UpsertDocument(ctx, doc)
+	doc, err = web.db.UpsertDocument(ctx, doc)
 	if err != nil {
 		web.log.Error("error creating document", "err", err, "request_id", requestId)
 		http.Error(w, "error creating document, request_id: "+requestId, http.StatusInternalServerError)
@@ -370,7 +408,7 @@ func (web *Web) handleMultipartUpsert(w http.ResponseWriter, r *http.Request, ct
 	}
 
 	// Store the file
-	err = web.stor.PutDocument(ctx, doc.TubName, doc.DocumentId, fileReader, fileLength, doc.Headers)
+	documentChanged, err := web.stor.PutDocument(ctx, doc.TubName, doc.DocumentId, fileReader, fileLength, doc.Headers, documentHash)
 	if err != nil {
 		web.log.Error("error putting document", "err", err, "request_id", requestId)
 		http.Error(w, "error putting document, request_id: "+requestId, http.StatusInternalServerError)
@@ -381,8 +419,22 @@ func (web *Web) handleMultipartUpsert(w http.ResponseWriter, r *http.Request, ct
 	}
 
 	// Store markdown if provided
+	var markdownChanged bool
 	if markdownReader != nil {
-		err = web.stor.PutDocumentMarkdown(ctx, doc.TubName, doc.DocumentId, markdownReader, markdownLength, doc.Headers)
+		markdownHash, err := util.HashReaderSHA256(markdownReader)
+		if err != nil {
+			web.log.Error("failed to hash document", "err", err, "request_id", requestId)
+			http.Error(w, "failed to hash document, request_id: "+requestId, http.StatusInternalServerError)
+			return
+		}
+		// Reset markdownReader after hashing
+		_, err = markdownReader.(io.Seeker).Seek(0, 0)
+		if err != nil {
+			web.log.Error("failed to seek to beginning of reader after hashing", "err", err, "request_id", requestId)
+			http.Error(w, "failed to seek to beginning of reader after hashing, request_id: "+requestId, http.StatusInternalServerError)
+			return
+		}
+		markdownChanged, err = web.stor.PutDocumentMarkdown(ctx, doc.TubName, doc.DocumentId, markdownReader, markdownLength, doc.Headers, markdownHash)
 		if err != nil {
 			web.log.Error("error putting markdown", "err", err, "request_id", requestId)
 			http.Error(w, "error putting markdown, request_id: "+requestId, http.StatusInternalServerError)
@@ -395,7 +447,25 @@ func (web *Web) handleMultipartUpsert(w http.ResponseWriter, r *http.Request, ct
 	}
 
 	// Store chunks if provided
+	var chunksChanged bool
 	if len(chunks) > 0 {
+		currentChunks, err := web.db.InternalGetChunks(doc)
+		if err != nil {
+			web.log.Error("error fetching current chunks", "err", err, "request_id", requestId)
+			http.Error(w, "error fetching current chunks, request_id: "+requestId, http.StatusInternalServerError)
+			if isNewDocument {
+				web.stor.DeleteDocument(ctx, doc.TubName, doc.DocumentId)
+				web.db.DeleteDocument(ctx, doc.TubName, doc.DocumentId)
+			}
+			return
+		}
+		chunksChanged = !util.ChunkSlicesContentEqual(currentChunks, chunks)
+		if !chunksChanged {
+			web.log.Info("uploaded chunks identical to existing chunks", "request_id", requestId)
+		}
+	}
+
+	if len(chunks) > 0 && chunksChanged {
 		// Delete old chunks if any
 		err = web.db.DeleteChunks(ctx, doc)
 		if err != nil {
@@ -420,10 +490,25 @@ func (web *Web) handleMultipartUpsert(w http.ResponseWriter, r *http.Request, ct
 
 	switch true {
 	case len(chunks) > 0:
+		if !chunksChanged {
+			// No changes to chunks, no need to re-embed
+			web.log.Info("chunks unchanged, skipping embedding", "request_id", requestId)
+			break
+		}
 		err = web.docket.ScheduleChunkEmbedding(doc)
 	case markdownReader != nil:
+		if !markdownChanged {
+			// No changes to markdown, no need to re-chunk
+			web.log.Info("markdown unchanged, skipping chunking", "request_id", requestId)
+			break
+		}
 		err = web.docket.ScheduleDocumentChunking(doc)
 	default:
+		if !documentChanged {
+			// No changes to document, no need to re-convert
+			web.log.Info("document unchanged, skipping conversion", "request_id", requestId)
+			break
+		}
 		err = web.docket.ScheduleDocumentConversion(doc)
 	}
 	if err != nil {

@@ -28,13 +28,6 @@ func chunkDocument(d *Docket) func(pqdocket.RunningTask) error {
 
 		tub, err := d.db.InternalGetTub(doc.TubId)
 
-		// DELETING ALL OLD CHUNKS
-		err = d.db.InternalDeleteChunks(doc)
-		if err != nil {
-			l.Error("failed to delete chunks", "error", err)
-			return fmt.Errorf("chunkDocument, could not delete chunks: %w", err)
-		}
-
 		// GETTING MARKDOWN OF DOCUMENT
 		reader, err := d.stor.GetDocumentMarkdown(context.Background(), doc.TubName, doc.DocumentId)
 		if err != nil {
@@ -55,6 +48,38 @@ func chunkDocument(d *Docket) func(pqdocket.RunningTask) error {
 		if err != nil {
 			l.Error("failed to split document", "error", err)
 			return fmt.Errorf("chunkDocument, could not split document: %w", err)
+		}
+
+		currentChunks, err := d.db.InternalGetChunks(doc)
+		if err != nil {
+			l.Error("failed to get current chunks", "error", err)
+			return fmt.Errorf("chunkDocument, could not get current chunks: %w", err)
+		}
+
+		if len(currentChunks) == len(chunks) {
+			identical := true
+			for i, chunk := range chunks {
+				if currentChunks[i].Content != chunk {
+					identical = false
+					break
+				}
+			}
+			if identical {
+				l.Info("chunks are identical to existing ones, skipping update")
+				return nil
+			}
+		}
+
+		// DELETING ALL OLD CHUNKS
+		err = d.db.InternalDeleteChunks(doc)
+		if err != nil {
+			l.Error("failed to delete chunks", "error", err)
+			return fmt.Errorf("chunkDocument, could not delete chunks: %w", err)
+		}
+
+		if len(chunks) == 0 {
+			l.Warn("no chunks created from document")
+			return nil
 		}
 
 		for i, chunk := range chunks {
