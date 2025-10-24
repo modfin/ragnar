@@ -135,7 +135,6 @@ func (d *DAO) CreateTub(ctx context.Context, tub ragnar.Tub) (ragnar.Tub, error)
 			  tub_id      TEXT        NOT NULL REFERENCES "public"."tub" (tub_id),
 			  tub_name    TEXT        NOT NULL REFERENCES "public"."tub" (tub_name),
 			  
-			  context     TEXT        NOT NULL DEFAULT '',
 			  content     TEXT        NOT NULL,
 		
 			  created_at   TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),

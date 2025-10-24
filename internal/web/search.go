@@ -13,11 +13,11 @@ import (
 	"github.com/modfin/strut"
 )
 
-func (app *Web) SearchXNN(ctx context.Context) strut.Response[[]ragnar.Chunk] {
+func (web *Web) SearchXNN(ctx context.Context) strut.Response[[]ragnar.Chunk] {
 	requestId := GetRequestID(ctx)
 
 	tubName := strut.PathParam(ctx, "tub")
-	tub, err := app.db.GetTub(ctx, tubName)
+	tub, err := web.db.GetTub(ctx, tubName)
 	if err != nil {
 		return strut.RespondError[string](http.StatusBadRequest, "Tub not found")
 	}
@@ -43,31 +43,31 @@ func (app *Web) SearchXNN(ctx context.Context) strut.Response[[]ragnar.Chunk] {
 	var filter ragnar.DocumentFilter
 	err = json.Unmarshal([]byte(filterStr), &filter)
 	if err != nil {
-		app.log.Error("Error unmarshalling filter json", "err", err, "request_id", requestId)
+		web.log.Error("Error unmarshalling filter json", "err", err, "request_id", requestId)
 		return strut.RespondError[[]ragnar.Document](http.StatusBadRequest,
 			fmt.Sprintf("Invalid JSON format in 'filter' query parameter, request_id: %s", requestId))
 	}
 
-	app.log.Debug("SearchXNN", "tub", tub, "query", query, "limit", limit, "offset", offset)
+	web.log.Debug("SearchXNN", "tub", tub, "query", query, "limit", limit, "offset", offset)
 
 	embedModel := voyageai.EmbedModel_voyage_context_3 // default model
 	modelFQN, ok := tub.Settings["embed_model"]
 	if ok && modelFQN != nil {
-		embedModel, err = app.ai.EmbedModelOf(*modelFQN)
+		embedModel, err = web.ai.EmbedModelOf(*modelFQN)
 		if err != nil {
-			app.log.Error("failed to get model", "error", err)
+			web.log.Error("failed to get model", "error", err)
 			return strut.RespondError[string](http.StatusBadRequest, fmt.Sprintf("Could not find embedding model: %v", *modelFQN))
 		}
 	}
-	queryVector, err := app.ai.EmbedString(embedModel.WithType(embed.TypeQuery), query)
+	queryVector, err := web.ai.EmbedString(embedModel.WithType(embed.TypeQuery), query)
 	if err != nil {
-		app.log.Error("failed to embed query", "error", err)
+		web.log.Error("failed to embed query", "error", err)
 		return strut.RespondError[string](http.StatusInternalServerError, fmt.Sprintf("Failed to embed query"))
 	}
 
-	chunks, err := app.db.QueryChunkEmbeds(ctx, tub.TubName, embedModel, filter, queryVector, limit, offset)
+	chunks, err := web.db.QueryChunkEmbeds(ctx, tub.TubName, embedModel, filter, queryVector, limit, offset)
 	if err != nil {
-		app.log.Error("failed to query chunk embeds", "error", err)
+		web.log.Error("failed to query chunk embeds", "error", err)
 		return strut.RespondError[string](http.StatusInternalServerError, fmt.Sprintf("Failed to query chunk embeds"))
 	}
 

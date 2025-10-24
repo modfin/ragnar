@@ -37,12 +37,12 @@ type Web struct {
 	ai     *ai.AI
 }
 
-func (app *Web) Name() string {
+func (web *Web) Name() string {
 	return "web"
 }
 
-func (a *Web) Close(ctx context.Context) error {
-	return a.srv.Shutdown(ctx)
+func (web *Web) Close(ctx context.Context) error {
+	return web.srv.Shutdown(ctx)
 }
 
 func New(log *slog.Logger, db *dao.DAO, stor *storage.Storage, docket *docket.Docket, ai *ai.AI, cfg Config) *Web {

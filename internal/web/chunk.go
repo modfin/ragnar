@@ -10,7 +10,7 @@ import (
 	"github.com/modfin/strut"
 )
 
-func (app *Web) GetChunks(ctx context.Context) strut.Response[[]ragnar.Document] {
+func (web *Web) GetChunks(ctx context.Context) strut.Response[[]ragnar.Document] {
 	correlationId := GetRequestID(ctx)
 	tub := strut.PathParam(ctx, "tub")
 	documentId := strut.PathParam(ctx, "document_id")
@@ -24,9 +24,9 @@ func (app *Web) GetChunks(ctx context.Context) strut.Response[[]ragnar.Document]
 		offset = 0
 	}
 
-	chunks, err := app.db.GetChunks(ctx, tub, documentId, limit, offset)
+	chunks, err := web.db.GetChunks(ctx, tub, documentId, limit, offset)
 	if err != nil {
-		app.log.Error("Error listing chunks", "err", err, "correlation_id", correlationId)
+		web.log.Error("Error listing chunks", "err", err, "correlation_id", correlationId)
 		return strut.RespondError[[]ragnar.Document](http.StatusInternalServerError,
 			fmt.Sprintf("Error listing chunks, correlation_id: %s", correlationId))
 	}
@@ -34,7 +34,7 @@ func (app *Web) GetChunks(ctx context.Context) strut.Response[[]ragnar.Document]
 	return strut.RespondOk(chunks)
 }
 
-func (app *Web) GetChunk(ctx context.Context) strut.Response[ragnar.Chunk] {
+func (web *Web) GetChunk(ctx context.Context) strut.Response[ragnar.Chunk] {
 
 	correlationId := GetRequestID(ctx)
 
@@ -43,14 +43,14 @@ func (app *Web) GetChunk(ctx context.Context) strut.Response[ragnar.Chunk] {
 
 	index, err := strconv.Atoi(strut.QueryParam(ctx, "index"))
 	if err != nil {
-		app.log.Error("Error getting chunk, index was not provided", "err", err, "correlation_id", correlationId)
+		web.log.Error("Error getting chunk, index was not provided", "err", err, "correlation_id", correlationId)
 		return strut.RespondError[ragnar.Chunk](http.StatusBadRequest,
 			fmt.Sprintf("Error getting chunk, index was not provided, correlation_id: %s", correlationId))
 	}
 
-	chunks, err := app.db.GetChunk(ctx, tub, documentId, index)
+	chunks, err := web.db.GetChunk(ctx, tub, documentId, index)
 	if err != nil {
-		app.log.Error("Error listing chunks", "err", err, "correlation_id", correlationId)
+		web.log.Error("Error listing chunks", "err", err, "correlation_id", correlationId)
 		return strut.RespondError[ragnar.Chunk](http.StatusInternalServerError,
 			fmt.Sprintf("Error getting chunk, correlation_id: %s", correlationId))
 	}
