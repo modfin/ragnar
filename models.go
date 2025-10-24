@@ -297,7 +297,6 @@ type Chunk struct {
 	DocumentId string `db:"document_id" json:"document_id" json-description:"Document uuid"`
 	ChunkId    int    `db:"chunk_id" json:"chunk_id" json-description:"Chunk identifier"`
 
-	Context string `db:"context" json:"context" json-description:"The context of the chunk, if any"`
 	Content string `db:"content" json:"content" json-description:"Fetched chunk content"`
 
 	CreatedAt time.Time `db:"created_at" json:"created_at" json-description:"Created at"`

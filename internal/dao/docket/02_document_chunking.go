@@ -57,12 +57,6 @@ func chunkDocument(d *Docket) func(pqdocket.RunningTask) error {
 			return fmt.Errorf("chunkDocument, could not split document: %w", err)
 		}
 
-		// chunk context seems a bit weird to have hardcoded on the document headers
-		chunkContext := doc.Headers["chunk_context"]
-		if chunkContext == nil {
-			chunkContext = new(string)
-		}
-
 		for i, chunk := range chunks {
 			// TODO map and batch the inserts?
 			err = d.db.InternalInsertChunk(ragnar.Chunk{
@@ -70,7 +64,6 @@ func chunkDocument(d *Docket) func(pqdocket.RunningTask) error {
 				DocumentId: doc.DocumentId,
 				TubId:      doc.TubId,
 				TubName:    doc.TubName,
-				Context:    *chunkContext,
 				Content:    chunk,
 			})
 			if err != nil {

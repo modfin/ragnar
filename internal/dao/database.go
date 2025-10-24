@@ -31,6 +31,9 @@ func (d *DAO) Close(ctx context.Context) error {
 	var closed = make(chan struct{})
 	go func() {
 		err = d.db.Close()
+		if err != nil {
+			d.log.Error("error closing database connection", "err", err)
+		}
 		close(closed)
 	}()
 

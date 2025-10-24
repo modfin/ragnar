@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"strings"
+	"unicode"
 )
 
 type Config struct {
@@ -193,13 +194,16 @@ func (s *Storage) DeleteDocument(ctx context.Context, tub string, documentId str
 }
 
 func sanitizeHeaderValue(s string) string {
-	replacement := ' '
-
 	return strings.Map(func(r rune) rune {
-		// If it's a printable ASCII character, keep it.
-		if r >= ' ' && r <= '~' {
+		if unicode.IsGraphic(r) {
 			return r
 		}
-		return replacement
+		if r == ' ' {
+			return r
+		}
+		if r == '\u00A0' {
+			return ' '
+		}
+		return -1
 	}, s)
 }
