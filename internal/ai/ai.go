@@ -123,6 +123,7 @@ func (ai *AI) EmbedDocument(model embed.Model, chunks []ragnar.Chunk) ([][]float
 				l.Warn("embedding batch failed, likely context length exceeded, will retry with smaller batches",
 					"batch_index", idx,
 					"batch_size", len(batch),
+					"used_chars_per_token_estimate", charsPerToken,
 					"error", err,
 				)
 				charsPerToken -= 1

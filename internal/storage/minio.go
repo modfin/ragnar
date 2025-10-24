@@ -8,8 +8,6 @@ import (
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"io"
 	"log/slog"
-	"strings"
-	"unicode"
 )
 
 const fileHashMetadataKey = "File-Hash"
@@ -82,7 +80,6 @@ func (s *Storage) PutDocument(ctx context.Context, tub string, documentId string
 			putObject.ContentDisposition = *v
 			continue
 		}
-		meta[k] = sanitizeHeaderValue(*v)
 	}
 	meta[fileHashMetadataKey] = fileHash
 	putObject.UserMetadata = meta
@@ -125,7 +122,6 @@ func (s *Storage) PutDocumentMarkdown(ctx context.Context, tub string, documentI
 		if k == "content-disposition" {
 			continue
 		}
-		meta[k] = sanitizeHeaderValue(*v)
 	}
 	meta[fileHashMetadataKey] = fileHash
 	putObject.UserMetadata = meta
@@ -230,19 +226,4 @@ func (s *Storage) DeleteDocument(ctx context.Context, tub string, documentId str
 		return fmt.Errorf("failed to delete object: %w", err)
 	}
 	return nil
-}
-
-func sanitizeHeaderValue(s string) string {
-	return strings.Map(func(r rune) rune {
-		if unicode.IsGraphic(r) {
-			return r
-		}
-		if r == ' ' {
-			return r
-		}
-		if r == '\u00A0' {
-			return ' '
-		}
-		return -1
-	}, s)
 }
