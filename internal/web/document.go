@@ -198,6 +198,15 @@ func (web *Web) handleSingleFileUpsert(w http.ResponseWriter, r *http.Request, c
 		}
 	}
 
+	if !isNewDocument && documentChanged {
+		doc, err = web.db.SetDocumentUpdatedAtNow(ctx, doc.TubName, doc.DocumentId)
+		if err != nil {
+			web.log.Error("error updating document updated_at", "err", err, "request_id", requestId)
+			http.Error(w, "error updating document updated_at, request_id: "+requestId, http.StatusInternalServerError)
+			return
+		}
+	}
+
 	w.WriteHeader(http.StatusCreated)
 	err = json.NewEncoder(w).Encode(doc)
 	if err != nil {
@@ -519,6 +528,15 @@ func (web *Web) handleMultipartUpsert(w http.ResponseWriter, r *http.Request, ct
 			web.db.DeleteDocument(ctx, doc.TubName, doc.DocumentId)
 		}
 		return
+	}
+
+	if !isNewDocument && (documentChanged || markdownChanged || chunksChanged) {
+		doc, err = web.db.SetDocumentUpdatedAtNow(ctx, doc.TubName, doc.DocumentId)
+		if err != nil {
+			web.log.Error("error updating document updated_at", "err", err, "request_id", requestId)
+			http.Error(w, "error updating document updated_at, request_id: "+requestId, http.StatusInternalServerError)
+			return
+		}
 	}
 
 	w.WriteHeader(http.StatusCreated)

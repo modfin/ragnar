@@ -49,7 +49,7 @@ func (d *DAO) UpsertDocument(ctx context.Context, doc ragnar.Document) (ragnar.D
 			}
 			q = `UPDATE "%s"."document" 
 				 SET headers = $3, 
-				     updated_at = now() 
+				     updated_at = CASE WHEN headers IS DISTINCT FROM $3 THEN now() ELSE updated_at END
 				WHERE tub_id = $1
 				  AND tub_name = $2
 				  AND document_id = $4 
@@ -255,7 +255,6 @@ func (d *DAO) GetDocument(ctx context.Context, tubname string, documentId string
 	return doc, err
 }
 
-// DeleteDocument deletes a document, will cascade to all referenced tables
 func (d *DAO) DeleteDocument(ctx context.Context, tubname string, documentId string) error {
 	tubname = strings.ToLower(tubname)
 	if !bucketNameRegExp.MatchString(tubname) {
@@ -299,6 +298,40 @@ func (d *DAO) DeleteDocument(ctx context.Context, tubname string, documentId str
 		}
 		if n != 1 {
 			return errors.New("document not found, n " + strconv.FormatInt(n, 10))
+		}
+
+		return nil
+	})
+}
+
+func (d *DAO) SetDocumentUpdatedAtNow(ctx context.Context, tubname string, documentId string) (ragnar.Document, error) {
+	var doc ragnar.Document
+	tubname = strings.ToLower(tubname)
+	if !bucketNameRegExp.MatchString(tubname) {
+		return doc, errors.New("tub name must only contain a-z0-9_-, and be at least 3 character long")
+	}
+
+	return doc, d.txx(ctx, func(tx *sqlx.Tx) error {
+
+		err := allowedTubOperation(tx, ctx, tubname, auth.ALLOW_UPDATE)
+		if err != nil {
+			return fmt.Errorf("error checking permission to delete document: %w", err)
+		}
+
+		schema, err := tubToSchema(tubname)
+		if err != nil {
+			return fmt.Errorf("error getting schema: %w", err)
+		}
+		q := `UPDATE "%s"."document"
+			  SET updated_at = now()
+			  WHERE tub_name = $1
+ 				AND document_id = $2
+			  RETURNING *
+		  `
+		q = fmt.Sprintf(q, schema)
+		err = tx.GetContext(ctx, &doc, q, tubname, documentId)
+		if err != nil {
+			return fmt.Errorf("error updating document's updated_at: %w", err)
 		}
 
 		return nil
