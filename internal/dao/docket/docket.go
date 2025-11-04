@@ -38,6 +38,7 @@ func New(log *slog.Logger, db *dao.DAO, stor *storage.Storage, ai *ai.AI, config
 		pqdocket.WithLogger(log.With("who", "pqdocket")),
 		pqdocket.Namespace("embedding_queue"),
 		pqdocket.MaxClaimCount(2),
+		pqdocket.Parallelism(5),
 		pqdocket.DefaultClaimTime(5*60),
 	)
 	if err != nil {

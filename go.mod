@@ -12,7 +12,7 @@ require (
 	github.com/modfin/bellman v1.0.6
 	github.com/modfin/clix v1.1.4
 	github.com/modfin/pqdocket v0.0.1
-	github.com/modfin/strut v0.3.2
+	github.com/modfin/strut v0.3.3
 	github.com/samber/slog-chi v1.16.1
 	github.com/stretchr/testify v1.11.1
 	github.com/tmc/langchaingo v0.1.14

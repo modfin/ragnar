@@ -10,6 +10,8 @@ import (
 	"log/slog"
 )
 
+const fileHashMetadataKey = "File-Hash"
+
 type Config struct {
 	Endpoint  string `cli:"s3-endpoint"`
 	Bucket    string `cli:"s3-bucket"`
@@ -48,12 +50,21 @@ func (s *Storage) Close(ctx context.Context) error {
 	return nil
 }
 
-func (s *Storage) PutDocument(ctx context.Context, tub string, documentId string, file io.Reader, objectSize int64, headers pgtype.Hstore) error {
+func (s *Storage) PutDocument(ctx context.Context, tub string, documentId string, file io.Reader, objectSize int64, headers pgtype.Hstore, fileHash string) (bool, error) {
 
 	bucket := s.cfg.Bucket
 	path := fmt.Sprintf("%s/%s", tub, documentId)
 
 	s.log.Info("storing document", "bucket", bucket, "path", path, "size", objectSize)
+
+	currentFileHash, err := s.getObjectHash(ctx, path)
+	if err != nil {
+		return false, fmt.Errorf("error checking existing document hash: %w", err)
+	}
+	if currentFileHash != nil && *currentFileHash == fileHash {
+		s.log.Info("document already exists with same hash, skipping upload", "bucket", bucket, "path", path)
+		return false, nil
+	}
 
 	putObject := minio.PutObjectOptions{}
 	var meta = map[string]string{}
@@ -69,25 +80,33 @@ func (s *Storage) PutDocument(ctx context.Context, tub string, documentId string
 			putObject.ContentDisposition = *v
 			continue
 		}
-		meta[k] = *v
 	}
+	meta[fileHashMetadataKey] = fileHash
 	putObject.UserMetadata = meta
 
-	_, err := s.client.PutObject(ctx, bucket, path, file, objectSize, putObject)
+	_, err = s.client.PutObject(ctx, bucket, path, file, objectSize, putObject)
 	if err != nil {
-		return fmt.Errorf("error storing document, %s/%s: %w", tub, documentId, err)
+		return false, fmt.Errorf("error storing document, %s/%s: %w", tub, documentId, err)
 	}
 
 	s.log.Info("successfully uploaded", "bucket", bucket, "path", path, "size", objectSize)
-	return nil
+	return true, nil
 }
 
-func (s *Storage) PutDocumentMarkdown(ctx context.Context, tub string, documentId string, file io.Reader, objectSize int64, headers pgtype.Hstore) error {
+func (s *Storage) PutDocumentMarkdown(ctx context.Context, tub string, documentId string, file io.Reader, objectSize int64, headers pgtype.Hstore, fileHash string) (bool, error) {
 
 	bucket := s.cfg.Bucket
 	path := fmt.Sprintf("%s/%s.md", tub, documentId)
 
 	s.log.Info("storing document", "bucket", bucket, "path", path, "size", objectSize)
+	currentFileHash, err := s.getObjectHash(ctx, path)
+	if err != nil {
+		return false, fmt.Errorf("error checking existing document markdown hash: %w", err)
+	}
+	if currentFileHash != nil && *currentFileHash == fileHash {
+		s.log.Info("markdown document already exists with same hash, skipping upload", "bucket", bucket, "path", path)
+		return false, nil
+	}
 
 	putObject := minio.PutObjectOptions{
 		ContentType: "text/markdown",
@@ -103,17 +122,35 @@ func (s *Storage) PutDocumentMarkdown(ctx context.Context, tub string, documentI
 		if k == "content-disposition" {
 			continue
 		}
-		meta[k] = *v
 	}
+	meta[fileHashMetadataKey] = fileHash
 	putObject.UserMetadata = meta
 
-	_, err := s.client.PutObject(ctx, bucket, path, file, objectSize, putObject)
+	_, err = s.client.PutObject(ctx, bucket, path, file, objectSize, putObject)
 	if err != nil {
-		return fmt.Errorf("error storing document, %s/%s: %w", tub, documentId, err)
+		return false, fmt.Errorf("error storing document markdown, %s/%s: %w", tub, documentId, err)
 	}
 
 	s.log.Info("successfully uploaded", "bucket", bucket, "path", path, "size", objectSize)
-	return nil
+	return true, nil
+}
+
+func (s *Storage) getObjectHash(ctx context.Context, path string) (*string, error) {
+	s.log.Debug("Fetching object metadata from storage for hash retrieval")
+
+	bucket := s.cfg.Bucket
+	objInfo, err := s.client.StatObject(ctx, bucket, path, minio.StatObjectOptions{})
+	if err != nil && minio.ToErrorResponse(err).Code == minio.NoSuchKey {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch object metadata: %w", err)
+	}
+
+	if hash, ok := objInfo.UserMetadata[fileHashMetadataKey]; ok {
+		return &hash, nil
+	}
+	return nil, nil
 }
 
 func (s *Storage) GetDocument(ctx context.Context, tub string, documentId string) (io.ReadCloser, error) {

@@ -26,10 +26,11 @@ func (d *DAO) GetChunks(ctx context.Context, tubname string, documentId string, 
 			return fmt.Errorf("error checking permission to read tub: %w", err)
 		}
 
-		q := `SELECT tub_id, tub_name, document_id, chunk_id, context, content, created_at, updated_at
+		q := `SELECT tub_id, tub_name, document_id, chunk_id, content, created_at, updated_at
 			  FROM "%s".chunk
 			  WHERE tub_name = $1
 			    AND document_id = $2
+			  ORDER BY chunk_id
 			    LIMIT $3
 			    OFFSET $4
 		`
@@ -69,7 +70,7 @@ func (d *DAO) GetChunk(ctx context.Context, tubname string, documentId string, i
 			return fmt.Errorf("error checking permission to read tub: %w", err)
 		}
 
-		q := `SELECT tub_id, tub_name, document_id, chunk_id, context, content, created_at, updated_at
+		q := `SELECT tub_id, tub_name, document_id, chunk_id, content, created_at, updated_at
 			  FROM "%s".chunk
 			  WHERE tub_name = $1
 			    AND document_id = $2
@@ -144,7 +145,7 @@ func (d *DAO) QueryChunkEmbeds(ctx context.Context, tubname string, model embed.
 			return fmt.Errorf("error getting column name from model, %s: %w", model.FQN(), err)
 		}
 		q := `
-SELECT chunk.tub_id, chunk.tub_name, chunk.document_id, chunk.chunk_id, chunk.context, chunk.content, chunk.created_at, chunk.updated_at 
+SELECT chunk.tub_id, chunk.tub_name, chunk.document_id, chunk.chunk_id, chunk.content, chunk.created_at, chunk.updated_at 
 FROM "%s".chunk
 INNER JOIN "%s".document USING (tub_id, document_id)
 WHERE chunk.tub_name = $1 

@@ -1,6 +1,8 @@
 package web
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -27,19 +29,19 @@ var whitelistedHeaders = map[string]bool{
 	"content-disposition": true,
 }
 
-func (app *Web) UpsertDocument(w http.ResponseWriter, r *http.Request) {
+func (web *Web) UpsertDocument(w http.ResponseWriter, r *http.Request) {
 	requestId := GetRequestID(r.Context())
 
 	ctx := r.Context()
 	tubname := chi.URLParam(r, "tub")
 	if tubname == "" {
-		app.log.Error("tub name is required", "request_id", requestId)
+		web.log.Error("tub name is required", "request_id", requestId)
 		http.Error(w, "tub name is required, request_id: "+requestId, http.StatusBadRequest)
 		return
 	}
-	tub, err := app.db.GetTub(ctx, tubname)
+	tub, err := web.db.GetTub(ctx, tubname)
 	if err != nil {
-		app.log.Error("error fetching tub", "err", err, "request_id", requestId)
+		web.log.Error("error fetching tub", "err", err, "request_id", requestId)
 		http.Error(w, "error fetching tub, request_id: "+requestId, http.StatusBadRequest)
 		return
 	}
@@ -50,7 +52,7 @@ func (app *Web) UpsertDocument(w http.ResponseWriter, r *http.Request) {
 
 	contentType := headers.Get("Content-Type")
 	if contentType == "" {
-		app.log.Error("Content-Type header is missing", "request_id", requestId)
+		web.log.Error("Content-Type header is missing", "request_id", requestId)
 		http.Error(w, "Content-Type header is missing", http.StatusBadRequest)
 		return
 	}
@@ -58,7 +60,7 @@ func (app *Web) UpsertDocument(w http.ResponseWriter, r *http.Request) {
 	// Check if this is multipart form data
 	mediaType, params, err := mime.ParseMediaType(contentType)
 	if err != nil {
-		app.log.Error("error parsing media type", "err", err, "request_id", requestId)
+		web.log.Error("error parsing media type", "err", err, "request_id", requestId)
 		http.Error(w, "error parsing media type, request_id: "+requestId, http.StatusBadRequest)
 		return
 	}
@@ -66,24 +68,33 @@ func (app *Web) UpsertDocument(w http.ResponseWriter, r *http.Request) {
 	requiredDocumentHeaders := tub.GetRequiredDocumentHeaders()
 	for _, h := range requiredDocumentHeaders {
 		if headers.Get(h) == "" && headers.Get(headerPrefix+h) == "" {
-			app.log.Error("missing required document header", "header", h, "request_id", requestId)
+			web.log.Error("missing required document header", "header", h, "request_id", requestId)
 			http.Error(w, "missing required document header: "+h+", request_id: "+requestId, http.StatusBadRequest)
 			return
 		}
 	}
 
 	if mediaType == "multipart/form-data" {
-		app.handleMultipartUpsert(w, r, ctx, tub, documentId, params, requestId)
+		web.handleMultipartUpsert(w, r, ctx, tub, documentId, params, requestId)
 	} else {
-		app.handleSingleFileUpsert(w, r, ctx, tub, documentId, requestId)
+		web.handleSingleFileUpsert(w, r, ctx, tub, documentId, requestId)
 	}
 }
 
-func (app *Web) handleSingleFileUpsert(w http.ResponseWriter, r *http.Request, ctx context.Context, tub ragnar.Tub, documentId string, requestId string) {
+func (web *Web) handleSingleFileUpsert(w http.ResponseWriter, r *http.Request, ctx context.Context, tub ragnar.Tub, documentId string, requestId string) {
+	var err error
 	headers := r.Header
 
 	// Ensure that the request body is not too large
-	reader := io.LimitReader(r.Body, app.cfg.HttpUploadLimit)
+	reader := io.LimitReader(r.Body, web.cfg.HttpUploadLimit)
+	if r.Header.Get("Content-Encoding") == "gzip" {
+		reader, err = gzip.NewReader(r.Body)
+		if err != nil {
+			web.log.Error("error creating gzip reader", "err", err, "request_id", requestId)
+			http.Error(w, "error creating gzip reader", http.StatusBadRequest)
+			return
+		}
+	}
 
 	contentType := headers.Get("Content-Type")
 	contentDisposition := headers.Get("Content-Disposition")
@@ -97,7 +108,7 @@ func (app *Web) handleSingleFileUpsert(w http.ResponseWriter, r *http.Request, c
 	if length == -1 {
 		tmp, err := os.CreateTemp("", "ragnar-upload-")
 		if err != nil {
-			app.log.Error("failed to create temporary file", "err", err, "request_id", requestId)
+			web.log.Error("failed to create temporary file", "err", err, "request_id", requestId)
 			http.Error(w, "failed to create temporary file, request_id: "+requestId, http.StatusInternalServerError)
 			return
 		}
@@ -105,14 +116,14 @@ func (app *Web) handleSingleFileUpsert(w http.ResponseWriter, r *http.Request, c
 		defer tmp.Close()
 		length, err = io.Copy(tmp, reader)
 		if err != nil {
-			app.log.Error("failed to copy request body to temporary file", "err", err, "request_id", requestId)
+			web.log.Error("failed to copy request body to temporary file", "err", err, "request_id", requestId)
 			http.Error(w, "failed to copy request body to temporary file, request_id: "+requestId, http.StatusInternalServerError)
 			return
 		}
 
 		_, err = tmp.Seek(0, 0)
 		if err != nil {
-			app.log.Error("failed to seek to beginning of temporary file", "err", err, "request_id", requestId)
+			web.log.Error("failed to seek to beginning of temporary file", "err", err, "request_id", requestId)
 			http.Error(w, "failed to seek to beginning of temporary file, request_id: "+requestId, http.StatusInternalServerError)
 			return
 		}
@@ -120,11 +131,18 @@ func (app *Web) handleSingleFileUpsert(w http.ResponseWriter, r *http.Request, c
 	}
 
 	// Throws error if exactly at limit to avoid truncation
-	if length >= app.cfg.HttpUploadLimit {
-		app.log.Error("Request body is too large", "limit", app.cfg.HttpUploadLimit-1, "request_id", requestId)
-		http.Error(w, fmt.Sprintf("Request body is too large, max %d bytes", app.cfg.HttpUploadLimit-1), http.StatusBadRequest)
+	if length >= web.cfg.HttpUploadLimit {
+		web.log.Error("Request body is too large", "limit", web.cfg.HttpUploadLimit-1, "request_id", requestId)
+		http.Error(w, fmt.Sprintf("Request body is too large, max %d bytes", web.cfg.HttpUploadLimit-1), http.StatusBadRequest)
 		return
 	}
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		web.log.Error("failed to read request body", "err", err, "request_id", requestId)
+		http.Error(w, "failed to read request body, request_id: "+requestId, http.StatusInternalServerError)
+		return
+	}
+	seekableReader := bytes.NewReader(data)
 
 	isNewDocument := documentId == ""
 	doc := ragnar.Document{
@@ -138,6 +156,20 @@ func (app *Web) handleSingleFileUpsert(w http.ResponseWriter, r *http.Request, c
 		},
 	}
 
+	documentHash, err := util.HashReaderSHA256(seekableReader)
+	if err != nil {
+		web.log.Error("failed to hash document", "err", err, "request_id", requestId)
+		http.Error(w, "failed to hash document, request_id: "+requestId, http.StatusInternalServerError)
+		return
+	}
+	// Reset reader after hashing
+	_, err = seekableReader.Seek(0, 0)
+	if err != nil {
+		web.log.Error("failed to seek to beginning of reader after hashing", "err", err, "request_id", requestId)
+		http.Error(w, "failed to seek to beginning of reader after hashing, request_id: "+requestId, http.StatusInternalServerError)
+		return
+	}
+
 	for k, v := range headers {
 		k = strings.ToLower(k)
 		if strings.HasPrefix(k, headerPrefix) {
@@ -146,53 +178,75 @@ func (app *Web) handleSingleFileUpsert(w http.ResponseWriter, r *http.Request, c
 		}
 	}
 
-	doc, err := app.db.UpsertDocument(ctx, doc)
+	doc, err = web.db.UpsertDocument(ctx, doc)
 	if err != nil {
-		app.log.Error("error creating document", "err", err, "request_id", requestId)
+		web.log.Error("error creating document", "err", err, "request_id", requestId)
 		http.Error(w, "error creating document, request_id: "+requestId, http.StatusInternalServerError)
 		return
 	}
 
-	err = app.stor.PutDocument(ctx, doc.TubName, doc.DocumentId, reader, length, doc.Headers)
+	documentChanged, err := web.stor.PutDocument(ctx, doc.TubName, doc.DocumentId, seekableReader, length, doc.Headers, documentHash)
 	if err != nil {
-		app.log.Error("error putting document", "err", err, "request_id", requestId)
+		web.log.Error("error putting document", "err", err, "request_id", requestId)
 		http.Error(w, "error putting document, request_id: "+requestId, http.StatusInternalServerError)
 		if isNewDocument {
-			app.db.DeleteDocument(ctx, doc.TubName, doc.DocumentId) // try to rollback
+			web.db.DeleteDocument(ctx, doc.TubName, doc.DocumentId) // try to rollback
 		}
 		return
 	}
 
-	err = app.docket.ScheduleDocumentConversion(doc)
-	if err != nil {
-		app.log.Error("error scheduling document conversion", "err", err, "request_id", requestId)
-		http.Error(w, "error scheduling document conversion, request_id: "+requestId, http.StatusInternalServerError)
-		if isNewDocument {
-			app.stor.DeleteDocument(ctx, doc.TubName, doc.DocumentId)
-			app.db.DeleteDocument(ctx, doc.TubName, doc.DocumentId)
+	if documentChanged {
+		err = web.docket.ScheduleDocumentConversion(doc)
+		if err != nil {
+			web.log.Error("error scheduling document conversion", "err", err, "request_id", requestId)
+			http.Error(w, "error scheduling document conversion, request_id: "+requestId, http.StatusInternalServerError)
+			if isNewDocument {
+				web.stor.DeleteDocument(ctx, doc.TubName, doc.DocumentId)
+				web.db.DeleteDocument(ctx, doc.TubName, doc.DocumentId)
+			}
+			return
 		}
-		return
+	}
+
+	if !isNewDocument && documentChanged {
+		doc, err = web.db.SetDocumentUpdatedAtNow(ctx, doc.TubName, doc.DocumentId)
+		if err != nil {
+			web.log.Error("error updating document updated_at", "err", err, "request_id", requestId)
+			http.Error(w, "error updating document updated_at, request_id: "+requestId, http.StatusInternalServerError)
+			return
+		}
 	}
 
 	w.WriteHeader(http.StatusCreated)
 	err = json.NewEncoder(w).Encode(doc)
 	if err != nil {
-		app.log.Error("error encoding document", "err", err, "request_id", requestId)
+		web.log.Error("error encoding document", "err", err, "request_id", requestId)
 		http.Error(w, "error encoding document, request_id: "+requestId, http.StatusInternalServerError)
 		return
 	}
 }
 
-func (app *Web) handleMultipartUpsert(w http.ResponseWriter, r *http.Request, ctx context.Context, tub ragnar.Tub, documentId string, params map[string]string, requestId string) {
+func (web *Web) handleMultipartUpsert(w http.ResponseWriter, r *http.Request, ctx context.Context, tub ragnar.Tub, documentId string, params map[string]string, requestId string) {
+	var err error
 	boundary, ok := params["boundary"]
 	if !ok {
-		app.log.Error("multipart boundary not found", "request_id", requestId)
+		web.log.Error("multipart boundary not found", "request_id", requestId)
 		http.Error(w, "multipart boundary not found, request_id: "+requestId, http.StatusBadRequest)
 		return
 	}
 
-	multipartReader := multipart.NewReader(r.Body, boundary)
-	defer r.Body.Close()
+	reader := r.Body
+	if r.Header.Get("Content-Encoding") == "gzip" {
+		reader, err = gzip.NewReader(r.Body)
+		if err != nil {
+			web.log.Error("error creating gzip reader", "err", err, "request_id", requestId)
+			http.Error(w, "error creating gzip reader", http.StatusBadRequest)
+			return
+		}
+	}
+
+	multipartReader := multipart.NewReader(reader, boundary)
+	defer reader.Close()
 
 	var fileReader io.Reader
 	var fileLength int64
@@ -208,7 +262,7 @@ func (app *Web) handleMultipartUpsert(w http.ResponseWriter, r *http.Request, ct
 			break
 		}
 		if err != nil {
-			app.log.Error("error reading multipart", "err", err, "request_id", requestId)
+			web.log.Error("error reading multipart", "err", err, "request_id", requestId)
 			http.Error(w, "error reading multipart, request_id: "+requestId, http.StatusBadRequest)
 			return
 		}
@@ -219,7 +273,7 @@ func (app *Web) handleMultipartUpsert(w http.ResponseWriter, r *http.Request, ct
 			// Handle the main document file
 			fileContentType = part.Header.Get("Content-Type")
 			if fileContentType == "" {
-				app.log.Error("file part must have Content-Type header", "request_id", requestId)
+				web.log.Error("file part must have Content-Type header", "request_id", requestId)
 				http.Error(w, "file part must have Content-Type header, request_id: "+requestId, http.StatusBadRequest)
 				part.Close()
 				return
@@ -232,7 +286,7 @@ func (app *Web) handleMultipartUpsert(w http.ResponseWriter, r *http.Request, ct
 			// Stream to temp file for length calculation
 			tmp, err := os.CreateTemp("", "ragnar-upload-file-")
 			if err != nil {
-				app.log.Error("failed to create temporary file for document", "err", err, "request_id", requestId)
+				web.log.Error("failed to create temporary file for document", "err", err, "request_id", requestId)
 				http.Error(w, "failed to create temporary file, request_id: "+requestId, http.StatusInternalServerError)
 				part.Close()
 				return
@@ -242,7 +296,7 @@ func (app *Web) handleMultipartUpsert(w http.ResponseWriter, r *http.Request, ct
 
 			fileLength, err = io.Copy(tmp, part)
 			if err != nil {
-				app.log.Error("failed to copy file part", "err", err, "request_id", requestId)
+				web.log.Error("failed to copy file part", "err", err, "request_id", requestId)
 				http.Error(w, "failed to copy file part, request_id: "+requestId, http.StatusInternalServerError)
 				part.Close()
 				return
@@ -250,7 +304,7 @@ func (app *Web) handleMultipartUpsert(w http.ResponseWriter, r *http.Request, ct
 
 			_, err = tmp.Seek(0, 0)
 			if err != nil {
-				app.log.Error("failed to seek file part", "err", err, "request_id", requestId)
+				web.log.Error("failed to seek file part", "err", err, "request_id", requestId)
 				http.Error(w, "failed to seek file part, request_id: "+requestId, http.StatusInternalServerError)
 				part.Close()
 				return
@@ -262,7 +316,7 @@ func (app *Web) handleMultipartUpsert(w http.ResponseWriter, r *http.Request, ct
 			// Handle the optional markdown content
 			tmp, err := os.CreateTemp("", "ragnar-upload-markdown-")
 			if err != nil {
-				app.log.Error("failed to create temporary file for markdown", "err", err, "request_id", requestId)
+				web.log.Error("failed to create temporary file for markdown", "err", err, "request_id", requestId)
 				http.Error(w, "failed to create temporary file for markdown, request_id: "+requestId, http.StatusInternalServerError)
 				part.Close()
 				return
@@ -272,7 +326,7 @@ func (app *Web) handleMultipartUpsert(w http.ResponseWriter, r *http.Request, ct
 
 			markdownLength, err = io.Copy(tmp, part)
 			if err != nil {
-				app.log.Error("failed to copy markdown part", "err", err, "request_id", requestId)
+				web.log.Error("failed to copy markdown part", "err", err, "request_id", requestId)
 				http.Error(w, "failed to copy markdown part, request_id: "+requestId, http.StatusInternalServerError)
 				part.Close()
 				return
@@ -280,7 +334,7 @@ func (app *Web) handleMultipartUpsert(w http.ResponseWriter, r *http.Request, ct
 
 			_, err = tmp.Seek(0, 0)
 			if err != nil {
-				app.log.Error("failed to seek markdown part", "err", err, "request_id", requestId)
+				web.log.Error("failed to seek markdown part", "err", err, "request_id", requestId)
 				http.Error(w, "failed to seek markdown part, request_id: "+requestId, http.StatusInternalServerError)
 				part.Close()
 				return
@@ -293,7 +347,7 @@ func (app *Web) handleMultipartUpsert(w http.ResponseWriter, r *http.Request, ct
 			var err error
 			chunksData, err := io.ReadAll(part)
 			if err != nil {
-				app.log.Error("failed to read chunks part", "err", err, "request_id", requestId)
+				web.log.Error("failed to read chunks part", "err", err, "request_id", requestId)
 				http.Error(w, "failed to read chunks part, request_id: "+requestId, http.StatusInternalServerError)
 				part.Close()
 				return
@@ -301,7 +355,7 @@ func (app *Web) handleMultipartUpsert(w http.ResponseWriter, r *http.Request, ct
 
 			// Validate JSON
 			if err := json.Unmarshal(chunksData, &chunks); err != nil {
-				app.log.Error("invalid chunks JSON", "err", err, "request_id", requestId)
+				web.log.Error("invalid chunks JSON", "err", err, "request_id", requestId)
 				http.Error(w, "invalid chunks JSON, request_id: "+requestId, http.StatusBadRequest)
 				part.Close()
 				return
@@ -309,7 +363,7 @@ func (app *Web) handleMultipartUpsert(w http.ResponseWriter, r *http.Request, ct
 			// make sure indexes are sorted and set on all chunks
 			for i := range chunks {
 				if chunks[i].ChunkId != i {
-					app.log.Error("chunk ids must be sequential starting from 0", "request_id", requestId)
+					web.log.Error("chunk ids must be sequential starting from 0", "request_id", requestId)
 					http.Error(w, "chunk ids must be sequential starting from 0, request_id: "+requestId, http.StatusBadRequest)
 					part.Close()
 					return
@@ -321,20 +375,20 @@ func (app *Web) handleMultipartUpsert(w http.ResponseWriter, r *http.Request, ct
 	}
 
 	if fileReader == nil {
-		app.log.Error("file part is required", "request_id", requestId)
+		web.log.Error("file part is required", "request_id", requestId)
 		http.Error(w, "file part is required, request_id: "+requestId, http.StatusBadRequest)
 		return
 	}
 
 	// Check file size limit
-	if fileLength >= app.cfg.HttpUploadLimit {
-		app.log.Error("File is too large", "limit", app.cfg.HttpUploadLimit-1, "request_id", requestId)
-		http.Error(w, fmt.Sprintf("File is too large, max %d bytes", app.cfg.HttpUploadLimit-1), http.StatusBadRequest)
+	if fileLength >= web.cfg.HttpUploadLimit {
+		web.log.Error("File is too large", "limit", web.cfg.HttpUploadLimit-1, "request_id", requestId)
+		http.Error(w, fmt.Sprintf("File is too large, max %d bytes", web.cfg.HttpUploadLimit-1), http.StatusBadRequest)
 		return
 	}
 
 	if len(chunks) > 0 && markdownReader == nil {
-		app.log.Error("chunks provided but markdown part is missing", "request_id", requestId)
+		web.log.Error("chunks provided but markdown part is missing", "request_id", requestId)
 		http.Error(w, "chunks provided but markdown part is missing, request_id: "+requestId, http.StatusBadRequest)
 		return
 	}
@@ -361,57 +415,103 @@ func (app *Web) handleMultipartUpsert(w http.ResponseWriter, r *http.Request, ct
 		}
 	}
 
-	// Store the document
-	doc, err := app.db.UpsertDocument(ctx, doc)
+	documentHash, err := util.HashReaderSHA256(fileReader)
 	if err != nil {
-		app.log.Error("error creating document", "err", err, "request_id", requestId)
+		web.log.Error("failed to hash document", "err", err, "request_id", requestId)
+		http.Error(w, "failed to hash document, request_id: "+requestId, http.StatusInternalServerError)
+		return
+	}
+	// Reset fileReader after hashing
+	_, err = fileReader.(io.Seeker).Seek(0, 0)
+	if err != nil {
+		web.log.Error("failed to seek to beginning of reader after hashing", "err", err, "request_id", requestId)
+		http.Error(w, "failed to seek to beginning of reader after hashing, request_id: "+requestId, http.StatusInternalServerError)
+		return
+	}
+
+	// Store the document
+	doc, err = web.db.UpsertDocument(ctx, doc)
+	if err != nil {
+		web.log.Error("error creating document", "err", err, "request_id", requestId)
 		http.Error(w, "error creating document, request_id: "+requestId, http.StatusInternalServerError)
 		return
 	}
 
 	// Store the file
-	err = app.stor.PutDocument(ctx, doc.TubName, doc.DocumentId, fileReader, fileLength, doc.Headers)
+	documentChanged, err := web.stor.PutDocument(ctx, doc.TubName, doc.DocumentId, fileReader, fileLength, doc.Headers, documentHash)
 	if err != nil {
-		app.log.Error("error putting document", "err", err, "request_id", requestId)
+		web.log.Error("error putting document", "err", err, "request_id", requestId)
 		http.Error(w, "error putting document, request_id: "+requestId, http.StatusInternalServerError)
 		if isNewDocument {
-			app.db.DeleteDocument(ctx, doc.TubName, doc.DocumentId) // try to rollback
+			web.db.DeleteDocument(ctx, doc.TubName, doc.DocumentId) // try to rollback
 		}
 		return
 	}
 
 	// Store markdown if provided
+	var markdownChanged bool
 	if markdownReader != nil {
-		err = app.stor.PutDocumentMarkdown(ctx, doc.TubName, doc.DocumentId, markdownReader, markdownLength, doc.Headers)
+		markdownHash, err := util.HashReaderSHA256(markdownReader)
 		if err != nil {
-			app.log.Error("error putting markdown", "err", err, "request_id", requestId)
+			web.log.Error("failed to hash document", "err", err, "request_id", requestId)
+			http.Error(w, "failed to hash document, request_id: "+requestId, http.StatusInternalServerError)
+			return
+		}
+		// Reset markdownReader after hashing
+		_, err = markdownReader.(io.Seeker).Seek(0, 0)
+		if err != nil {
+			web.log.Error("failed to seek to beginning of reader after hashing", "err", err, "request_id", requestId)
+			http.Error(w, "failed to seek to beginning of reader after hashing, request_id: "+requestId, http.StatusInternalServerError)
+			return
+		}
+		markdownChanged, err = web.stor.PutDocumentMarkdown(ctx, doc.TubName, doc.DocumentId, markdownReader, markdownLength, doc.Headers, markdownHash)
+		if err != nil {
+			web.log.Error("error putting markdown", "err", err, "request_id", requestId)
 			http.Error(w, "error putting markdown, request_id: "+requestId, http.StatusInternalServerError)
 			if isNewDocument {
-				app.stor.DeleteDocument(ctx, doc.TubName, doc.DocumentId)
-				app.db.DeleteDocument(ctx, doc.TubName, doc.DocumentId)
+				web.stor.DeleteDocument(ctx, doc.TubName, doc.DocumentId)
+				web.db.DeleteDocument(ctx, doc.TubName, doc.DocumentId)
 			}
 			return
 		}
 	}
 
 	// Store chunks if provided
+	var chunksChanged bool
 	if len(chunks) > 0 {
-		// Delete old chunks if any
-		err = app.db.DeleteChunks(ctx, doc)
+		currentChunks, err := web.db.InternalGetChunks(doc)
 		if err != nil {
-			app.log.Error("error deleting old chunks", "err", err, "request_id", requestId)
+			web.log.Error("error fetching current chunks", "err", err, "request_id", requestId)
+			http.Error(w, "error fetching current chunks, request_id: "+requestId, http.StatusInternalServerError)
+			if isNewDocument {
+				web.stor.DeleteDocument(ctx, doc.TubName, doc.DocumentId)
+				web.db.DeleteDocument(ctx, doc.TubName, doc.DocumentId)
+			}
+			return
+		}
+		chunksChanged = !util.ChunkSlicesContentEqual(currentChunks, chunks)
+		if !chunksChanged {
+			web.log.Info("uploaded chunks identical to existing chunks", "request_id", requestId)
+		}
+	}
+
+	if len(chunks) > 0 && chunksChanged {
+		// Delete old chunks if any
+		err = web.db.DeleteChunks(ctx, doc)
+		if err != nil {
+			web.log.Error("error deleting old chunks", "err", err, "request_id", requestId)
 		}
 		for _, chunk := range chunks {
 			chunk.TubId = doc.TubId
 			chunk.TubName = doc.TubName
 			chunk.DocumentId = doc.DocumentId
-			err = app.db.InternalInsertChunk(chunk)
+			err = web.db.InternalInsertChunk(chunk)
 			if err != nil {
-				app.log.Error("error inserting chunk", "err", err, "request_id", requestId)
+				web.log.Error("error inserting chunk", "err", err, "request_id", requestId)
 				http.Error(w, "error inserting chunk, request_id: "+requestId, http.StatusInternalServerError)
 				if isNewDocument {
-					app.stor.DeleteDocument(ctx, doc.TubName, doc.DocumentId)
-					app.db.DeleteDocument(ctx, doc.TubName, doc.DocumentId)
+					web.stor.DeleteDocument(ctx, doc.TubName, doc.DocumentId)
+					web.db.DeleteDocument(ctx, doc.TubName, doc.DocumentId)
 				}
 				return
 			}
@@ -420,32 +520,56 @@ func (app *Web) handleMultipartUpsert(w http.ResponseWriter, r *http.Request, ct
 
 	switch true {
 	case len(chunks) > 0:
-		err = app.docket.ScheduleChunkEmbedding(doc)
+		if !chunksChanged {
+			// No changes to chunks, no need to re-embed
+			web.log.Info("chunks unchanged, skipping embedding", "request_id", requestId)
+			break
+		}
+		err = web.docket.ScheduleChunkEmbedding(doc)
 	case markdownReader != nil:
-		err = app.docket.ScheduleDocumentChunking(doc)
+		if !markdownChanged {
+			// No changes to markdown, no need to re-chunk
+			web.log.Info("markdown unchanged, skipping chunking", "request_id", requestId)
+			break
+		}
+		err = web.docket.ScheduleDocumentChunking(doc)
 	default:
-		err = app.docket.ScheduleDocumentConversion(doc)
+		if !documentChanged {
+			// No changes to document, no need to re-convert
+			web.log.Info("document unchanged, skipping conversion", "request_id", requestId)
+			break
+		}
+		err = web.docket.ScheduleDocumentConversion(doc)
 	}
 	if err != nil {
-		app.log.Error("error scheduling document conversion", "err", err, "request_id", requestId)
+		web.log.Error("error scheduling document conversion", "err", err, "request_id", requestId)
 		http.Error(w, "error scheduling document conversion, request_id: "+requestId, http.StatusInternalServerError)
 		if isNewDocument {
-			app.stor.DeleteDocument(ctx, doc.TubName, doc.DocumentId)
-			app.db.DeleteDocument(ctx, doc.TubName, doc.DocumentId)
+			web.stor.DeleteDocument(ctx, doc.TubName, doc.DocumentId)
+			web.db.DeleteDocument(ctx, doc.TubName, doc.DocumentId)
 		}
 		return
+	}
+
+	if !isNewDocument && (documentChanged || markdownChanged || chunksChanged) {
+		doc, err = web.db.SetDocumentUpdatedAtNow(ctx, doc.TubName, doc.DocumentId)
+		if err != nil {
+			web.log.Error("error updating document updated_at", "err", err, "request_id", requestId)
+			http.Error(w, "error updating document updated_at, request_id: "+requestId, http.StatusInternalServerError)
+			return
+		}
 	}
 
 	w.WriteHeader(http.StatusCreated)
 	err = json.NewEncoder(w).Encode(doc)
 	if err != nil {
-		app.log.Error("error encoding document", "err", err, "request_id", requestId)
+		web.log.Error("error encoding document", "err", err, "request_id", requestId)
 		http.Error(w, "error encoding document, request_id: "+requestId, http.StatusInternalServerError)
 		return
 	}
 }
 
-func (app *Web) GetDocuments(ctx context.Context) strut.Response[[]ragnar.Document] {
+func (web *Web) GetDocuments(ctx context.Context) strut.Response[[]ragnar.Document] {
 	requestId := GetRequestID(ctx)
 
 	tub := strut.PathParam(ctx, "tub")
@@ -465,14 +589,14 @@ func (app *Web) GetDocuments(ctx context.Context) strut.Response[[]ragnar.Docume
 	var filter ragnar.DocumentFilter
 	err = json.Unmarshal([]byte(filterstr), &filter)
 	if err != nil {
-		app.log.Error("Error unmarshalling filter json", "err", err, "request_id", requestId)
+		web.log.Error("Error unmarshalling filter json", "err", err, "request_id", requestId)
 		return strut.RespondError[[]ragnar.Document](http.StatusBadRequest,
 			fmt.Sprintf("Invalid JSON format in 'filter' query parameter, request_id: %s", requestId))
 	}
 
-	docs, err := app.db.ListDocuments(ctx, tub, filter, limit, offset)
+	docs, err := web.db.ListDocuments(ctx, tub, filter, limit, offset)
 	if err != nil {
-		app.log.Error("Error listing documents", "err", err, "request_id", requestId)
+		web.log.Error("Error listing documents", "err", err, "request_id", requestId)
 		return strut.RespondError[[]ragnar.Document](http.StatusInternalServerError,
 			fmt.Sprintf("Error listing documents, request_id: %s", requestId))
 	}
@@ -480,15 +604,15 @@ func (app *Web) GetDocuments(ctx context.Context) strut.Response[[]ragnar.Docume
 	return strut.RespondOk(docs)
 }
 
-func (app *Web) GetDocument(ctx context.Context) strut.Response[ragnar.Document] {
+func (web *Web) GetDocument(ctx context.Context) strut.Response[ragnar.Document] {
 	requestId := GetRequestID(ctx)
 
 	tub := strut.PathParam(ctx, "tub")
 	documentId := strut.PathParam(ctx, "document_id")
 
-	doc, err := app.db.GetDocument(ctx, tub, documentId)
+	doc, err := web.db.GetDocument(ctx, tub, documentId)
 	if err != nil {
-		app.log.Error("Error fetching document", "err", err, "request_id", requestId)
+		web.log.Error("Error fetching document", "err", err, "request_id", requestId)
 		return strut.RespondError[ragnar.Document](http.StatusBadRequest,
 			fmt.Sprintf("Error fetching document, request_id: %s", requestId))
 	}
@@ -496,22 +620,22 @@ func (app *Web) GetDocument(ctx context.Context) strut.Response[ragnar.Document]
 	return strut.RespondOk(doc)
 }
 
-func (app *Web) DownloadDocument(ctx context.Context) strut.Response[[]byte] {
+func (web *Web) DownloadDocument(ctx context.Context) strut.Response[[]byte] {
 	requestId := GetRequestID(ctx)
 
 	tub := strut.PathParam(ctx, "tub")
 	documentId := strut.PathParam(ctx, "document_id")
 
-	doc, err := app.db.GetDocument(ctx, tub, documentId)
+	doc, err := web.db.GetDocument(ctx, tub, documentId)
 	if err != nil {
-		app.log.Error("Error fetching document", "err", err, "request_id", requestId)
+		web.log.Error("Error fetching document", "err", err, "request_id", requestId)
 		return strut.RespondError[[]byte](http.StatusBadRequest,
 			fmt.Sprintf("Error fetching document, request_id: %s", requestId))
 	}
 
-	reader, err := app.stor.GetDocument(ctx, doc.TubName, doc.DocumentId)
+	reader, err := web.stor.GetDocument(ctx, doc.TubName, doc.DocumentId)
 	if err != nil {
-		app.log.Error("Error getting document", "err", err, "request_id", requestId)
+		web.log.Error("Error getting document", "err", err, "request_id", requestId)
 		return strut.RespondError[[]byte](http.StatusBadRequest,
 			fmt.Sprintf("Error getting document, request_id: %s", requestId))
 	}
@@ -534,22 +658,22 @@ func (app *Web) DownloadDocument(ctx context.Context) strut.Response[[]byte] {
 	})
 }
 
-func (app *Web) DownloadDocumentMarkdown(ctx context.Context) strut.Response[[]byte] {
+func (web *Web) DownloadDocumentMarkdown(ctx context.Context) strut.Response[[]byte] {
 	requestId := GetRequestID(ctx)
 
 	tub := strut.PathParam(ctx, "tub")
 	documentId := strut.PathParam(ctx, "document_id")
 
-	doc, err := app.db.GetDocument(ctx, tub, documentId)
+	doc, err := web.db.GetDocument(ctx, tub, documentId)
 	if err != nil {
-		app.log.Error("Error fetching document", "err", err, "request_id", requestId)
+		web.log.Error("Error fetching document", "err", err, "request_id", requestId)
 		return strut.RespondError[[]byte](http.StatusBadRequest,
 			fmt.Sprintf("Error fetching document, request_id: %s", requestId))
 	}
 
-	reader, err := app.stor.GetDocumentMarkdown(ctx, doc.TubName, doc.DocumentId)
+	reader, err := web.stor.GetDocumentMarkdown(ctx, doc.TubName, doc.DocumentId)
 	if err != nil {
-		app.log.Error("Error getting markdown document", "err", err, "request_id", requestId)
+		web.log.Error("Error getting markdown document", "err", err, "request_id", requestId)
 		return strut.RespondError[[]byte](http.StatusBadRequest,
 			fmt.Sprintf("Error getting markdown document, request_id: %s", requestId))
 	}
@@ -578,29 +702,29 @@ func (app *Web) DownloadDocumentMarkdown(ctx context.Context) strut.Response[[]b
 	})
 }
 
-func (app *Web) DeleteDocument(ctx context.Context) strut.Response[ragnar.Document] {
+func (web *Web) DeleteDocument(ctx context.Context) strut.Response[ragnar.Document] {
 	requestId := GetRequestID(ctx)
 
 	tub := strut.PathParam(ctx, "tub")
 	documentId := strut.PathParam(ctx, "document_id")
 
-	doc, err := app.db.GetDocument(ctx, tub, documentId)
+	doc, err := web.db.GetDocument(ctx, tub, documentId)
 	if err != nil {
-		app.log.Error("Error fetching document", "err", err, "request_id", requestId)
+		web.log.Error("Error fetching document", "err", err, "request_id", requestId)
 		return strut.RespondError[ragnar.Document](http.StatusBadRequest,
 			fmt.Sprintf("Error fetching document, request_id: %s", requestId))
 	}
 
-	err = app.db.DeleteDocument(ctx, tub, documentId)
+	err = web.db.DeleteDocument(ctx, tub, documentId)
 	if err != nil {
-		app.log.Error("Error deleting document obj", "err", err, "request_id", requestId)
+		web.log.Error("Error deleting document obj", "err", err, "request_id", requestId)
 		return strut.RespondError[ragnar.Document](http.StatusBadRequest,
 			fmt.Sprintf("Error deleting document obj, request_id: %s", requestId))
 	}
 
-	err = app.stor.DeleteDocument(ctx, tub, documentId)
+	err = web.stor.DeleteDocument(ctx, tub, documentId)
 	if err != nil {
-		app.log.Error("Error deleting document from storage", "err", err, "request_id", requestId)
+		web.log.Error("Error deleting document from storage", "err", err, "request_id", requestId)
 		return strut.RespondError[ragnar.Document](http.StatusBadRequest,
 			fmt.Sprintf("Error deleting document from storage, request_id: %s", requestId))
 	}
@@ -608,21 +732,21 @@ func (app *Web) DeleteDocument(ctx context.Context) strut.Response[ragnar.Docume
 	return strut.RespondOk(doc)
 }
 
-func (app *Web) GetDocumentStatus(ctx context.Context) strut.Response[ragnar.DocumentStatus] {
+func (web *Web) GetDocumentStatus(ctx context.Context) strut.Response[ragnar.DocumentStatus] {
 	requestId := GetRequestID(ctx)
 
 	tub := strut.PathParam(ctx, "tub")
 	documentId := strut.PathParam(ctx, "document_id")
 
-	doc, err := app.db.GetDocument(ctx, tub, documentId)
+	doc, err := web.db.GetDocument(ctx, tub, documentId)
 	if err != nil {
-		app.log.Error("Error fetching document", "err", err, "request_id", requestId)
+		web.log.Error("Error fetching document", "err", err, "request_id", requestId)
 		return strut.RespondError[ragnar.DocumentStatus](http.StatusBadRequest,
 			fmt.Sprintf("Error fetching document, request_id: %s", requestId))
 	}
-	status, err := app.docket.DocumentStatus(doc.DocumentId)
+	status, err := web.docket.DocumentStatus(doc.DocumentId)
 	if err != nil {
-		app.log.Error("Error fetching document status", "err", err, "request_id", requestId)
+		web.log.Error("Error fetching document status", "err", err, "request_id", requestId)
 		return strut.RespondError[ragnar.DocumentStatus](http.StatusInternalServerError,
 			fmt.Sprintf("Error fetching document status, request_id: %s", requestId))
 	}
