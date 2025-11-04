@@ -2,6 +2,7 @@ package ragnar
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -68,13 +69,23 @@ func (c *httpClient) doRequest(ctx context.Context, method, path string, body io
 		}
 		u += "?" + q.Encode()
 	}
+	var gzipBody io.Reader
+	if body != nil {
+		gzipBody, err = compressData(body)
+		if err != nil {
+			return nil, fmt.Errorf("failed to compress request body: %w", err)
+		}
+	}
 
-	req, err := http.NewRequestWithContext(ctx, method, u, body)
+	req, err := http.NewRequestWithContext(ctx, method, u, gzipBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	req.Header.Set("Authorization", "Bearer "+c.accessKey)
+	if gzipBody != nil {
+		req.Header.Set("Content-Encoding", "gzip")
+	}
 
 	for key, value := range headers {
 		req.Header.Set(key, value)
@@ -420,4 +431,20 @@ func (c *httpClient) upsertTubDocumentWithOptionals(ctx context.Context, method,
 	}
 
 	return document, nil
+}
+
+func compressData(source io.Reader) (io.ReadCloser, error) {
+	r, w := io.Pipe()
+	gw := gzip.NewWriter(w)
+
+	go func() {
+		defer w.Close()
+		defer gw.Close()
+
+		_, err := io.Copy(gw, source)
+		if err != nil {
+			w.CloseWithError(err)
+		}
+	}()
+	return r, nil
 }

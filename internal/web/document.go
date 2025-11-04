@@ -2,6 +2,7 @@ package web
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -81,10 +82,19 @@ func (web *Web) UpsertDocument(w http.ResponseWriter, r *http.Request) {
 }
 
 func (web *Web) handleSingleFileUpsert(w http.ResponseWriter, r *http.Request, ctx context.Context, tub ragnar.Tub, documentId string, requestId string) {
+	var err error
 	headers := r.Header
 
 	// Ensure that the request body is not too large
 	reader := io.LimitReader(r.Body, web.cfg.HttpUploadLimit)
+	if r.Header.Get("Content-Encoding") == "gzip" {
+		reader, err = gzip.NewReader(r.Body)
+		if err != nil {
+			web.log.Error("error creating gzip reader", "err", err, "request_id", requestId)
+			http.Error(w, "error creating gzip reader", http.StatusBadRequest)
+			return
+		}
+	}
 
 	contentType := headers.Get("Content-Type")
 	contentDisposition := headers.Get("Content-Disposition")
@@ -217,6 +227,7 @@ func (web *Web) handleSingleFileUpsert(w http.ResponseWriter, r *http.Request, c
 }
 
 func (web *Web) handleMultipartUpsert(w http.ResponseWriter, r *http.Request, ctx context.Context, tub ragnar.Tub, documentId string, params map[string]string, requestId string) {
+	var err error
 	boundary, ok := params["boundary"]
 	if !ok {
 		web.log.Error("multipart boundary not found", "request_id", requestId)
@@ -224,8 +235,18 @@ func (web *Web) handleMultipartUpsert(w http.ResponseWriter, r *http.Request, ct
 		return
 	}
 
-	multipartReader := multipart.NewReader(r.Body, boundary)
-	defer r.Body.Close()
+	reader := r.Body
+	if r.Header.Get("Content-Encoding") == "gzip" {
+		reader, err = gzip.NewReader(r.Body)
+		if err != nil {
+			web.log.Error("error creating gzip reader", "err", err, "request_id", requestId)
+			http.Error(w, "error creating gzip reader", http.StatusBadRequest)
+			return
+		}
+	}
+
+	multipartReader := multipart.NewReader(reader, boundary)
+	defer reader.Close()
 
 	var fileReader io.Reader
 	var fileLength int64
