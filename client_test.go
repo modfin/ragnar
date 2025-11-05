@@ -86,10 +86,9 @@ func TestGetTubDocuments(t *testing.T) {
 func TestInvalidTubDocument(t *testing.T) {
 	content := strings.NewReader("This is bad test document content")
 	headers := map[string]string{
-		"Content-Type":      "text/plain",
 		"x-ragnar-filename": "test.txt",
 	}
-	_, err := ragnarClient.CreateTubDocument(context.Background(), tubTestName, content, headers)
+	_, err := ragnarClient.CreateTubDocument(context.Background(), tubTestName, content, "text/plain", headers)
 	if err == nil {
 		t.Fatal("expected error creating document without required header")
 	}
@@ -102,12 +101,11 @@ func TestTubDocument(t *testing.T) {
 	content := strings.NewReader("This is test document content")
 	mfnId := "test-id-12345"
 	headers := map[string]string{
-		"Content-Type":         "text/plain",
 		"x-ragnar-filename":    "test.txt",
 		"x-ragnar-mfn-news-id": mfnId,
 	}
 
-	doc, err := ragnarClient.CreateTubDocument(context.Background(), tubTestName, content, headers)
+	doc, err := ragnarClient.CreateTubDocument(context.Background(), tubTestName, content, "text/plain", headers)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +123,7 @@ func TestTubDocument(t *testing.T) {
 		t.Fatalf("expected filename header to be 'test.txt', got '%v'", doc.Headers["filename"])
 	}
 	content.Seek(0, 0)
-	doc, err = ragnarClient.UpdateTubDocument(context.Background(), tubTestName, doc.DocumentId, content, headers)
+	doc, err = ragnarClient.UpdateTubDocument(context.Background(), tubTestName, doc.DocumentId, content, "text/plain", headers)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,7 +182,7 @@ func TestTubDocument(t *testing.T) {
 	if err != nil {
 		t.Fatal("document is not completed")
 	}
-	updatedDoc, err := ragnarClient.UpdateTubDocument(context.Background(), tubTestName, doc.DocumentId, content, headers)
+	updatedDoc, err := ragnarClient.UpdateTubDocument(context.Background(), tubTestName, doc.DocumentId, content, "text/plain", headers)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -235,11 +233,10 @@ func TestTubDocument(t *testing.T) {
 func TestGetTubDocumentChunks(t *testing.T) {
 	mfnPressReleaseContent := strings.NewReader("<div class=\"title\">\n    <a href=\"/cis/a/spotlight-group/spotlight-group-invoicery-group-godkant-for-listning-pa-spotlight-value-eb8bb932\">Spotlight Group: Invoicery Group godkänt för listning på Spotlight Value</a>\n</div>\n<div class=\"publish-date\">\n      2025-09-18 14:00:00\n\n</div>\n\n<div class=\"content s-cis\">\n\n\n<div class=\"mfn-preamble\"><strong><p><span><span><span><span><span><span><span>Spotlight Group meddelar att dotterbolaget Spotlight Stock Market har godkänt Invoicery Group för listning på Spotlight Value. Bolaget, som i Sverige är mer känt under ett av sina svenska varumärken Frilans Finans, blir därmed det sjunde bolaget på listan och det första nya sedan Spotlight Value lanserades den 17 juni 2025. Första dag för handel i Invoicery Group på Spotlight Value planeras till onsdagen den 24 september 2025.</span></span></span></span></span></span></span></p></strong></div><p><span><span><span><span><span><span><span><span>\"Det är alltid roligt att andra observerar och uppskattar det arbete som vi gör i vår verksamhet, särskilt i en tid då uppdragsbaserat arbete får allt större uppmärksamhet på arbetsmarknaden\", säger Invoicerys VD Stephen Schad.</span></span></span></span></span></span></span></span></p><p><span><span><span><span><span><span><span><span>Kraven för att listas på Spotlight Value är att bolaget ska ha visat vinst på sista raden de tre senaste åren, ha haft positiv tillväxt under minst två av de tre senaste åren och ha gett utdelning till sina aktieägaren minst två av de tre senaste åren. Invoicery lever därmed upp till alla dessa krav.</span></span></span></span></span></span></span></span></p><p><span><span><span><span><span><span><span><span>\"Spotlight Value har tagits emot med stort intresse från såväl investerare som bolag och vi är väldigt glada över att kunna välkomna Invoicery som nytt Spotlight Value-bolag. Med dem blir listan ännu starkare och ännu mer attraktiv för investerarna. Vi hoppas att de får sällskap snart av fler stabila bolag som i dag har andra listningar eller kanske inte är noterade alls\", säger Spotlight Stock Markets VD Peter Gönczi.</span></span></span></span></span></span></span></span></p><p><span><span><span><span><span><span><span><span>För att kvalificera sig för Spotlight Value måste ett bolag ha haft vinst på sista raden de tre senaste åren, visat tillväxt minst två av de tre senaste tre åren och dessutom ha gett aktieutdelning minst två av de tre senaste åren. Med avdrag för engångskostnader relaterade till noteringen lever Invoicery upp till alla dessa krav. Sedan tidigare finns sex bolag på Spotlight Value: Homemaid, Veteranpoolen, Gosol Energy Group, Transferator, Aquaticus Real Estate och Logistri Fastighets AB.</span></span></span></span></span></span></span></span></p><div></div><div class=\"mfn-footer\"><p><span><span><span><span><span><span><span><span><span><strong><span><span><span>För ytterligare information om Spotlight Group, vänligen kontakta:</span></span></span></strong></span></span></span></span></span></span></span></span></span><br><span><span><span><span><span><span><span><span><span><span><span><span>Peter Gönczi, VD</span></span></span></span></span></span></span></span></span></span></span></span><br><span><span><span><span><span><span><span><span><span><span><span><span>E-post: ir@spotlightgroup.se</span></span></span></span></span></span></span></span></span></span></span></span><br><span><span><span><span><span><span><span><span><span><span><span><span>Hemsida: www.spotlightgroup.se </span></span></span></span></span></span></span></span></span></span></span></span></p></div>\n\n</div>\n\n\n\n\n<div class=\"footer\">\n     \n     <div class=\"source\">\n        Källa <strong>Cision</strong>\n     </div>\n     \n     \n\n<div class=\"social-tray\">\n    <a class=\"social-ico social-mail\" title=\"Share mail\" rel=\"noopener\" href=\"mailto:?subject=Hej%2C%20jag%20vill%20dela%20denna%20nyhet%20fr%C3%A5n%20mfn.se%20med%20dig%2C%20Spotlight%20Group:%20Invoicery%20Group%20godk%C3%A4nt%20f%C3%B6r%20listning%20p%C3%A5%20Spotlight%20Value&amp;body=https://mfn.se/cis/a/spotlight-group/spotlight-group-invoicery-group-godkant-for-listning-pa-spotlight-value-eb8bb932\"></a>\n    <a class=\"social-ico social-twitter\" title=\"Share twitter\" target=\"_blank\" rel=\"noopener\" href=\"https://twitter.com/intent/tweet?url=https:%2F%2Fmfn.se%2Fcis%2Fa%2Fspotlight-group%2Fspotlight-group-invoicery-group-godkant-for-listning-pa-spotlight-value-eb8bb932&amp;text=Spotlight%20Group:%20Invoicery%20Group%20godk%C3%A4nt%20f%C3%B6r%20listning%20p%C3%A5%20Spotlight%20Value&amp;via=MFN_IRnews\"></a>\n    <a class=\"social-ico social-linked-in\" title=\"Share LinkedIn\" target=\"_blank\" rel=\"noopener\" href=\"http://www.linkedin.com/shareArticle?mini=true&amp;url=https:%2F%2Fmfn.se%2Fcis%2Fa%2Fspotlight-group%2Fspotlight-group-invoicery-group-godkant-for-listning-pa-spotlight-value-eb8bb932&amp;title=Spotlight%20Group:%20Invoicery%20Group%20godk%C3%A4nt%20f%C3%B6r%20listning%20p%C3%A5%20Spotlight%20Value&amp;summary=&amp;source=mfn.se\"></a>\n    <a class=\"social-ico social-facebook\" title=\"Share Facebook\" target=\"_blank\" rel=\"noopener\" href=\"http://www.facebook.com/sharer/sharer.php?u=https:%2F%2Fmfn.se%2Fcis%2Fa%2Fspotlight-group%2Fspotlight-group-invoicery-group-godkant-for-listning-pa-spotlight-value-eb8bb932\"></a>\n</div>\n</div>\n\n")
 	headers := map[string]string{
-		"Content-Type":         "text/html",
 		"x-ragnar-filename":    "test.txt",
 		"x-ragnar-mfn-news-id": "eb8bb932-58b0-5aaa-9850-13029c3830d0",
 	}
-	doc, err := ragnarClient.CreateTubDocument(context.Background(), tubTestName, mfnPressReleaseContent, headers)
+	doc, err := ragnarClient.CreateTubDocument(context.Background(), tubTestName, mfnPressReleaseContent, "text/html", headers)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -289,13 +286,12 @@ func TestGetTubDocumentChunks(t *testing.T) {
 func TestGetTubDocumentWithOptionalMarkdown(t *testing.T) {
 	mfnPressReleaseContent := strings.NewReader("<div class=\"title\">\n    <a href=\"/a/k33/k33-completes-strategic-purchase-of-15-bitcoin\">K33 Completes Strategic Purchase of 15 Bitcoin</a>\n</div>\n<div class=\"publish-date\">\n      2025-09-22 14:40:00\n\n</div>\n\n<div class=\"content s-mfn\">\n\n\n<div class=\"mfn-preamble\"><p><strong>K33 AB (publ) (\"K33\"), a leading digital asset brokerage and research firm, announces the acquisition of 15 Bitcoin (BTC) for a total consideration of approximately SEK 16.0 million.</strong></p></div>\n<div class=\"mfn-body\"><p>Following today’s transaction, K33 holds a total of 141 BTC on its balance sheet, with an average acquisition cost of SEK 1,114,859 per BTC.</p><p>K33’s Bitcoin Treasury strategy reflects both the company’s conviction in Bitcoin’s long-term value proposition and its intention to establish a strong position in the asset to unlock operational alpha in its broker business.</p></div>\n<div class=\"mfn-footer mfn-contacts mfn-88304a0cc28f\"><p><strong class=\"mfn-heading-1\">For further information, please contact:</strong><br>Torbjørn Bull Jenssen, CEO, K33 AB (publ)<br>E-mail: ir@k33.com<br>Web: k33.com/ir</p></div>\n<div class=\"mfn-footer mfn-about mfn-3dfe054bd57f\"><p><strong class=\"mfn-heading-1\">About K33</strong><br>K33 AB (publ), listed on Nasdaq First North Growth Market, is the new gold standard for investments in digital assets. <a href=\"http://k33.com\" rel=\"noopener\" target=\"_blank\">K33</a> offers market-leading execution, actionable insights, and superior support to private and institutional partners across EMEA. Mangold Fondkommission serves as the Certified Adviser for K33 AB (publ).</p></div>\n<div class=\"mfn-footer mfn-attachment mfn-attachment-general\"><p><strong class=\"mfn-heading-1\">Attachments</strong><br><a class=\"mfn-generated mfn-primary\" href=\"https://storage.mfn.se/80ec718e-8584-4d4c-90fe-a02b5e0540c4/k33-completes-strategic-purchase-of-15-bitcoin.pdf\" rel=\"noopener\" target=\"_blank\">K33 Completes Strategic Purchase of 15 Bitcoin</a></p></div>\n\n</div>\n\n\n\n\n<div class=\"footer\">\n     \n     <div class=\"source\">\n        Källa <strong>MFN</strong>\n     </div>\n     \n     \n\n<div class=\"social-tray\">\n    <a class=\"social-ico social-mail\" title=\"Share mail\" rel=\"noopener\" href=\"mailto:?subject=Hej%2C%20jag%20vill%20dela%20denna%20nyhet%20fr%C3%A5n%20mfn.se%20med%20dig%2C%20K33%20Completes%20Strategic%20Purchase%20of%2015%20Bitcoin&amp;body=https://mfn.se/a/k33/k33-completes-strategic-purchase-of-15-bitcoin\"></a>\n    <a class=\"social-ico social-twitter\" title=\"Share twitter\" target=\"_blank\" rel=\"noopener\" href=\"https://twitter.com/intent/tweet?url=https:%2F%2Fmfn.se%2Fa%2Fk33%2Fk33-completes-strategic-purchase-of-15-bitcoin&amp;text=K33%20Completes%20Strategic%20Purchase%20of%2015%20Bitcoin&amp;via=MFN_IRnews\"></a>\n    <a class=\"social-ico social-linked-in\" title=\"Share LinkedIn\" target=\"_blank\" rel=\"noopener\" href=\"http://www.linkedin.com/shareArticle?mini=true&amp;url=https:%2F%2Fmfn.se%2Fa%2Fk33%2Fk33-completes-strategic-purchase-of-15-bitcoin&amp;title=K33%20Completes%20Strategic%20Purchase%20of%2015%20Bitcoin&amp;summary=&amp;source=mfn.se\"></a>\n    <a class=\"social-ico social-facebook\" title=\"Share Facebook\" target=\"_blank\" rel=\"noopener\" href=\"http://www.facebook.com/sharer/sharer.php?u=https:%2F%2Fmfn.se%2Fa%2Fk33%2Fk33-completes-strategic-purchase-of-15-bitcoin\"></a>\n</div>\n</div>\n\n")
 	headers := map[string]string{
-		"Content-Type":         "text/html",
 		"x-ragnar-filename":    "test.txt",
 		"x-ragnar-mfn-news-id": "eb8bb932-58b0-5aaa-9850-13029c3830d0",
 	}
 	markdownContent := "# K33 Completes Strategic Purchase of 15 Bitcoin\n\nK33 AB (publ) (\"K33\"), a leading digital asset brokerage and research firm,\nannounces the acquisition of 15 Bitcoin (BTC) for a total consideration of\napproximately SEK 16.0 million.\n\nFollowing today’s transaction, K33 holds a total of 141 BTC on its balance\nsheet, with an average acquisition cost of SEK 1,114,859 per BTC.\n\nK33’s Bitcoin Treasury strategy reflects both the company’s conviction in\nBitcoin’s long-term value proposition and its intention to establish a strong\nposition in the asset to unlock operational alpha in its broker business."
 	markdownContentReader := strings.NewReader(markdownContent)
-	doc, err := ragnarClient.CreateTubDocumentWithOptionals(context.Background(), tubTestName, mfnPressReleaseContent, markdownContentReader, nil, headers)
+	doc, err := ragnarClient.CreateTubDocumentWithOptionals(context.Background(), tubTestName, mfnPressReleaseContent, "text/html", markdownContentReader, nil, headers)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -337,7 +333,6 @@ func TestGetTubDocumentWithOptionalMarkdown(t *testing.T) {
 func TestGetTubDocumentWithOptionalMarkdownAndChunks(t *testing.T) {
 	mfnPressReleaseContent := strings.NewReader("<div class=\"title\">\n    <a href=\"/a/k33/k33-completes-strategic-purchase-of-15-bitcoin\">K33 Completes Strategic Purchase of 15 Bitcoin</a>\n</div>\n<div class=\"publish-date\">\n      2025-09-22 14:40:00\n\n</div>\n\n<div class=\"content s-mfn\">\n\n\n<div class=\"mfn-preamble\"><p><strong>K33 AB (publ) (\"K33\"), a leading digital asset brokerage and research firm, announces the acquisition of 15 Bitcoin (BTC) for a total consideration of approximately SEK 16.0 million.</strong></p></div>\n<div class=\"mfn-body\"><p>Following today’s transaction, K33 holds a total of 141 BTC on its balance sheet, with an average acquisition cost of SEK 1,114,859 per BTC.</p><p>K33’s Bitcoin Treasury strategy reflects both the company’s conviction in Bitcoin’s long-term value proposition and its intention to establish a strong position in the asset to unlock operational alpha in its broker business.</p></div>\n<div class=\"mfn-footer mfn-contacts mfn-88304a0cc28f\"><p><strong class=\"mfn-heading-1\">For further information, please contact:</strong><br>Torbjørn Bull Jenssen, CEO, K33 AB (publ)<br>E-mail: ir@k33.com<br>Web: k33.com/ir</p></div>\n<div class=\"mfn-footer mfn-about mfn-3dfe054bd57f\"><p><strong class=\"mfn-heading-1\">About K33</strong><br>K33 AB (publ), listed on Nasdaq First North Growth Market, is the new gold standard for investments in digital assets. <a href=\"http://k33.com\" rel=\"noopener\" target=\"_blank\">K33</a> offers market-leading execution, actionable insights, and superior support to private and institutional partners across EMEA. Mangold Fondkommission serves as the Certified Adviser for K33 AB (publ).</p></div>\n<div class=\"mfn-footer mfn-attachment mfn-attachment-general\"><p><strong class=\"mfn-heading-1\">Attachments</strong><br><a class=\"mfn-generated mfn-primary\" href=\"https://storage.mfn.se/80ec718e-8584-4d4c-90fe-a02b5e0540c4/k33-completes-strategic-purchase-of-15-bitcoin.pdf\" rel=\"noopener\" target=\"_blank\">K33 Completes Strategic Purchase of 15 Bitcoin</a></p></div>\n\n</div>\n\n\n\n\n<div class=\"footer\">\n     \n     <div class=\"source\">\n        Källa <strong>MFN</strong>\n     </div>\n     \n     \n\n<div class=\"social-tray\">\n    <a class=\"social-ico social-mail\" title=\"Share mail\" rel=\"noopener\" href=\"mailto:?subject=Hej%2C%20jag%20vill%20dela%20denna%20nyhet%20fr%C3%A5n%20mfn.se%20med%20dig%2C%20K33%20Completes%20Strategic%20Purchase%20of%2015%20Bitcoin&amp;body=https://mfn.se/a/k33/k33-completes-strategic-purchase-of-15-bitcoin\"></a>\n    <a class=\"social-ico social-twitter\" title=\"Share twitter\" target=\"_blank\" rel=\"noopener\" href=\"https://twitter.com/intent/tweet?url=https:%2F%2Fmfn.se%2Fa%2Fk33%2Fk33-completes-strategic-purchase-of-15-bitcoin&amp;text=K33%20Completes%20Strategic%20Purchase%20of%2015%20Bitcoin&amp;via=MFN_IRnews\"></a>\n    <a class=\"social-ico social-linked-in\" title=\"Share LinkedIn\" target=\"_blank\" rel=\"noopener\" href=\"http://www.linkedin.com/shareArticle?mini=true&amp;url=https:%2F%2Fmfn.se%2Fa%2Fk33%2Fk33-completes-strategic-purchase-of-15-bitcoin&amp;title=K33%20Completes%20Strategic%20Purchase%20of%2015%20Bitcoin&amp;summary=&amp;source=mfn.se\"></a>\n    <a class=\"social-ico social-facebook\" title=\"Share Facebook\" target=\"_blank\" rel=\"noopener\" href=\"http://www.facebook.com/sharer/sharer.php?u=https:%2F%2Fmfn.se%2Fa%2Fk33%2Fk33-completes-strategic-purchase-of-15-bitcoin\"></a>\n</div>\n</div>\n\n")
 	headers := map[string]string{
-		"Content-Type":         "text/html",
 		"x-ragnar-filename":    "test.txt",
 		"x-ragnar-mfn-news-id": "eb8bb932-58b0-5aaa-9850-13029c3830d0",
 	}
@@ -358,7 +353,7 @@ func TestGetTubDocumentWithOptionalMarkdownAndChunks(t *testing.T) {
 	// seek
 	mfnPressReleaseContent.Seek(0, io.SeekStart)
 	markdownContentReader.Seek(0, io.SeekStart)
-	doc, err := ragnarClient.CreateTubDocumentWithOptionals(context.Background(), tubTestName, mfnPressReleaseContent, markdownContentReader, chunks, headers)
+	doc, err := ragnarClient.CreateTubDocumentWithOptionals(context.Background(), tubTestName, mfnPressReleaseContent, "text/html", markdownContentReader, chunks, headers)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -368,7 +363,7 @@ func TestGetTubDocumentWithOptionalMarkdownAndChunks(t *testing.T) {
 	// upload again to test hash checking
 	mfnPressReleaseContent.Seek(0, io.SeekStart)
 	markdownContentReader.Seek(0, io.SeekStart)
-	doc, err = ragnarClient.UpdateTubDocumentWithOptionals(context.Background(), tubTestName, doc.DocumentId, mfnPressReleaseContent, markdownContentReader, chunks, headers)
+	doc, err = ragnarClient.UpdateTubDocumentWithOptionals(context.Background(), tubTestName, doc.DocumentId, mfnPressReleaseContent, "text/html", markdownContentReader, chunks, headers)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -425,7 +420,7 @@ func TestGetTubDocumentWithOptionalMarkdownAndChunks(t *testing.T) {
 			Content: "New chunk 2 content.",
 		},
 	}
-	updatedDoc, err := ragnarClient.UpdateTubDocumentWithOptionals(context.Background(), tubTestName, doc.DocumentId, mfnPressReleaseContent, markdownContentReader, updatedChunks, headers)
+	updatedDoc, err := ragnarClient.UpdateTubDocumentWithOptionals(context.Background(), tubTestName, doc.DocumentId, mfnPressReleaseContent, "text/html", markdownContentReader, updatedChunks, headers)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -484,11 +479,10 @@ func TestGetTubDocumentWithBadOptionals(t *testing.T) {
 	// chunks without markdown should fail
 	mfnPressReleaseContent := strings.NewReader("<div class=\"title\">\n    <a href=\"/a/k33/k33-completes-strategic-purchase-of-15-bitcoin\">K33 Completes Strategic Purchase of 15 Bitcoin</a>\n</div>\n<div class=\"publish-date\">\n      2025-09-22 14:40:00\n\n</div>\n\n<div class=\"content s-mfn\">\n\n\n<div class=\"mfn-preamble\"><p><strong>K33 AB (publ) (\"K33\"), a leading digital asset brokerage and research firm, announces the acquisition of 15 Bitcoin (BTC) for a total consideration of approximately SEK 16.0 million.</strong></p></div>\n<div class=\"mfn-body\"><p>Following today’s transaction, K33 holds a total of 141 BTC on its balance sheet, with an average acquisition cost of SEK 1,114,859 per BTC.</p><p>K33’s Bitcoin Treasury strategy reflects both the company’s conviction in Bitcoin’s long-term value proposition and its intention to establish a strong position in the asset to unlock operational alpha in its broker business.</p></div>\n<div class=\"mfn-footer mfn-contacts mfn-88304a0cc28f\"><p><strong class=\"mfn-heading-1\">For further information, please contact:</strong><br>Torbjørn Bull Jenssen, CEO, K33 AB (publ)<br>E-mail: ir@k33.com<br>Web: k33.com/ir</p></div>\n<div class=\"mfn-footer mfn-about mfn-3dfe054bd57f\"><p><strong class=\"mfn-heading-1\">About K33</strong><br>K33 AB (publ), listed on Nasdaq First North Growth Market, is the new gold standard for investments in digital assets. <a href=\"http://k33.com\" rel=\"noopener\" target=\"_blank\">K33</a> offers market-leading execution, actionable insights, and superior support to private and institutional partners across EMEA. Mangold Fondkommission serves as the Certified Adviser for K33 AB (publ).</p></div>\n<div class=\"mfn-footer mfn-attachment mfn-attachment-general\"><p><strong class=\"mfn-heading-1\">Attachments</strong><br><a class=\"mfn-generated mfn-primary\" href=\"https://storage.mfn.se/80ec718e-8584-4d4c-90fe-a02b5e0540c4/k33-completes-strategic-purchase-of-15-bitcoin.pdf\" rel=\"noopener\" target=\"_blank\">K33 Completes Strategic Purchase of 15 Bitcoin</a></p></div>\n\n</div>\n\n\n\n\n<div class=\"footer\">\n     \n     <div class=\"source\">\n        Källa <strong>MFN</strong>\n     </div>\n     \n     \n\n<div class=\"social-tray\">\n    <a class=\"social-ico social-mail\" title=\"Share mail\" rel=\"noopener\" href=\"mailto:?subject=Hej%2C%20jag%20vill%20dela%20denna%20nyhet%20fr%C3%A5n%20mfn.se%20med%20dig%2C%20K33%20Completes%20Strategic%20Purchase%20of%2015%20Bitcoin&amp;body=https://mfn.se/a/k33/k33-completes-strategic-purchase-of-15-bitcoin\"></a>\n    <a class=\"social-ico social-twitter\" title=\"Share twitter\" target=\"_blank\" rel=\"noopener\" href=\"https://twitter.com/intent/tweet?url=https:%2F%2Fmfn.se%2Fa%2Fk33%2Fk33-completes-strategic-purchase-of-15-bitcoin&amp;text=K33%20Completes%20Strategic%20Purchase%20of%2015%20Bitcoin&amp;via=MFN_IRnews\"></a>\n    <a class=\"social-ico social-linked-in\" title=\"Share LinkedIn\" target=\"_blank\" rel=\"noopener\" href=\"http://www.linkedin.com/shareArticle?mini=true&amp;url=https:%2F%2Fmfn.se%2Fa%2Fk33%2Fk33-completes-strategic-purchase-of-15-bitcoin&amp;title=K33%20Completes%20Strategic%20Purchase%20of%2015%20Bitcoin&amp;summary=&amp;source=mfn.se\"></a>\n    <a class=\"social-ico social-facebook\" title=\"Share Facebook\" target=\"_blank\" rel=\"noopener\" href=\"http://www.facebook.com/sharer/sharer.php?u=https:%2F%2Fmfn.se%2Fa%2Fk33%2Fk33-completes-strategic-purchase-of-15-bitcoin\"></a>\n</div>\n</div>\n\n")
 	headers := map[string]string{
-		"Content-Type":         "text/html",
 		"x-ragnar-filename":    "test.txt",
 		"x-ragnar-mfn-news-id": "eb8bb932-58b0-5aaa-9850-13029c3830d0",
 	}
-	_, err := ragnarClient.CreateTubDocumentWithOptionals(context.Background(), tubTestName, mfnPressReleaseContent, nil, []Chunk{{
+	_, err := ragnarClient.CreateTubDocumentWithOptionals(context.Background(), tubTestName, mfnPressReleaseContent, "text/html", nil, []Chunk{{
 		ChunkId: 0,
 		Content: "123321",
 	}}, headers)
@@ -569,13 +563,12 @@ func TestDocumentFilterOperators(t *testing.T) {
 	// Create test documents with different header values
 	content := strings.NewReader("Test document content")
 	headers1 := map[string]string{
-		"Content-Type":         "text/plain",
 		"x-ragnar-filename":    "test1.txt",
 		"x-ragnar-mfn-news-id": "test-filter-001",
 		"x-ragnar-priority":    "5",
 		"x-ragnar-created":     "2024-01-15",
 	}
-	doc1, err := ragnarClient.CreateTubDocument(context.Background(), tubTestName, content, headers1)
+	doc1, err := ragnarClient.CreateTubDocument(context.Background(), tubTestName, content, "text/plain", headers1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -583,13 +576,12 @@ func TestDocumentFilterOperators(t *testing.T) {
 
 	content = strings.NewReader("Test document content 2")
 	headers2 := map[string]string{
-		"Content-Type":         "text/plain",
 		"x-ragnar-filename":    "test2.txt",
 		"x-ragnar-mfn-news-id": "test-filter-002",
 		"x-ragnar-priority":    "10",
 		"x-ragnar-created":     "2024-06-20",
 	}
-	doc2, err := ragnarClient.CreateTubDocument(context.Background(), tubTestName, content, headers2)
+	doc2, err := ragnarClient.CreateTubDocument(context.Background(), tubTestName, content, "text/plain", headers2)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -597,13 +589,12 @@ func TestDocumentFilterOperators(t *testing.T) {
 
 	content = strings.NewReader("Test document content 3")
 	headers3 := map[string]string{
-		"Content-Type":         "text/plain",
 		"x-ragnar-filename":    "test3.txt",
 		"x-ragnar-mfn-news-id": "test-filter-003",
 		"x-ragnar-priority":    "15",
 		"x-ragnar-created":     "2024-12-01",
 	}
-	doc3, err := ragnarClient.CreateTubDocument(context.Background(), tubTestName, content, headers3)
+	doc3, err := ragnarClient.CreateTubDocument(context.Background(), tubTestName, content, "text/plain", headers3)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -713,13 +704,12 @@ func TestCreateTubAndUpdateWithInvalidRequiredHeaders(t *testing.T) {
 	}
 	content := strings.NewReader("This is test document without the header")
 	headers := map[string]string{
-		"Content-Type":      "text/plain",
 		"x-ragnar-filename": "test.txt",
 	}
 	markdownContent := "# Test header\n\nThis is test document without the header"
 	markdownContentReader := strings.NewReader(markdownContent)
 	chunks := []Chunk{{ChunkId: 0, Content: "Test test"}}
-	docToUpdateLater, err := ragnarClient.CreateTubDocumentWithOptionals(ctx, tubName, content, markdownContentReader, chunks, headers)
+	docToUpdateLater, err := ragnarClient.CreateTubDocumentWithOptionals(ctx, tubName, content, "text/plain", markdownContentReader, chunks, headers)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -735,9 +725,8 @@ func TestCreateTubAndUpdateWithInvalidRequiredHeaders(t *testing.T) {
 	markdownContent2 := "# Test header\n\nThis is test document without the header but with required header"
 	markdownContentReader2 := strings.NewReader(markdownContent2)
 	chunks2 := []Chunk{{ChunkId: 0, Content: "Test test"}, {ChunkId: 1, Content: "Test test 2"}}
-	docToUpdateLater, err = ragnarClient.UpdateTubDocumentWithOptionals(ctx, tubName, docToUpdateLater.DocumentId, content, markdownContentReader2, chunks2, map[string]string{
-		"Content-Type":      "text/plain",
-		"x-ragnar-filename": "test.txt",
+	docToUpdateLater, err = ragnarClient.UpdateTubDocumentWithOptionals(ctx, tubName, docToUpdateLater.DocumentId, content, "text/plain", markdownContentReader2, chunks2, map[string]string{
+		"x-ragnar-filename":                        "test.txt",
 		fmt.Sprintf("x-ragnar-%s", requiredHeader): "test-value",
 	})
 	if err != nil {
@@ -776,7 +765,7 @@ func TestCreateTubAndUpdateWithInvalidRequiredHeaders(t *testing.T) {
 		t.Fatal(err)
 	}
 	// try creating document without required header -> should fail
-	_, err = ragnarClient.CreateTubDocument(context.Background(), tubName, content, headers)
+	_, err = ragnarClient.CreateTubDocument(context.Background(), tubName, content, "text/plain", headers)
 	if err == nil {
 		t.Fatal("expected error creating document without required header")
 	}
@@ -827,11 +816,11 @@ func TestUnauthorizedAccess(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), unauthorizedError) {
 		t.Fatal("expected 401 fetching tub document", err)
 	}
-	_, err = ragnarUnauthorizedClient.CreateTubDocument(context.Background(), tubTestName, strings.NewReader("test"), map[string]string{})
+	_, err = ragnarUnauthorizedClient.CreateTubDocument(context.Background(), tubTestName, strings.NewReader("test"), "text/plain", map[string]string{})
 	if err == nil || !strings.Contains(err.Error(), rawUnauthorizedError) {
 		t.Fatal("expected 401 creating tub document", err)
 	}
-	_, err = ragnarUnauthorizedClient.UpdateTubDocument(context.Background(), tubTestName, "doc1", strings.NewReader("test"), map[string]string{})
+	_, err = ragnarUnauthorizedClient.UpdateTubDocument(context.Background(), tubTestName, "doc1", strings.NewReader("test"), "text/plain", map[string]string{})
 	if err == nil || !strings.Contains(err.Error(), rawUnauthorizedError) {
 		t.Fatal("expected 401 updating tub document", err)
 	}
