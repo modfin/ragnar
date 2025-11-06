@@ -148,11 +148,10 @@ func (d *DAO) QueryChunkEmbeds(ctx context.Context, tubname string, model embed.
 SELECT chunk.tub_id, chunk.tub_name, chunk.document_id, chunk.chunk_id, chunk.content, chunk.created_at, chunk.updated_at 
 FROM "%s".chunk
 INNER JOIN "%s".document USING (tub_id, document_id)
-WHERE chunk.tub_name = $1 
-  AND chunk."%s" IS NOT NULL
+WHERE chunk."%s" IS NOT NULL
 `
 		q = fmt.Sprintf(q, schema, schema, colName)
-		args := []any{tubname, vectorToSQLArray(vector)}
+		args := []any{vectorToSQLArray(vector)}
 
 		i := len(args) + 1
 		for fieldName, filterValues := range documentFilter {
@@ -210,7 +209,7 @@ WHERE chunk.tub_name = $1
 			}
 		}
 
-		q += fmt.Sprintf("\nORDER BY chunk.\"%s\" <-> CAST($2 AS VECTOR(%d))", colName, model.OutputDimensions)
+		q += fmt.Sprintf("\nORDER BY chunk.\"%s\" <#> CAST($1 AS VECTOR(%d))", colName, model.OutputDimensions)
 		q += fmt.Sprintf("\nLIMIT $%d\nOFFSET $%d", i, i+1)
 
 		args = append(args, limit, offset)

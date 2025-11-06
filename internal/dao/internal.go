@@ -137,6 +137,13 @@ func (d *DAO) InternalEnsureTubEmbeddingSchema(doc ragnar.Document, model embed.
 	if err != nil {
 		return fmt.Errorf("error adding column: %w", err)
 	}
+	// setup hnsw index on the column too
+	q = `CREATE INDEX ON "%s".chunk USING hnsw (%s vector_cosine_ops);`
+	q = fmt.Sprintf(q, schema, colName)
+	_, err = d.db.Exec(q)
+	if err != nil {
+		return fmt.Errorf("error creating index: %w", err)
+	}
 	return nil
 }
 
