@@ -209,7 +209,7 @@ WHERE chunk."%s" IS NOT NULL
 			}
 		}
 
-		q += fmt.Sprintf("\nORDER BY chunk.\"%s\" <#> CAST($1 AS VECTOR(%d))", colName, model.OutputDimensions)
+		q += fmt.Sprintf("\nORDER BY chunk.\"%s\" <=> CAST($1 AS VECTOR(%d))", colName, model.OutputDimensions)
 		q += fmt.Sprintf("\nLIMIT $%d\nOFFSET $%d", i, i+1)
 
 		args = append(args, limit, offset)
