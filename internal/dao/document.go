@@ -79,7 +79,7 @@ func (d *DAO) UpsertDocument(ctx context.Context, doc ragnar.Document) (ragnar.D
 	return retdoc, nil
 }
 
-func (d *DAO) ListDocuments(ctx context.Context, tubname string, filter ragnar.DocumentFilter, limit int, offset int) ([]ragnar.Document, error) {
+func (d *DAO) ListDocuments(ctx context.Context, tubname string, filter ragnar.DocumentFilter, sort ragnar.DocumentSort, limit int, offset int) ([]ragnar.Document, error) {
 
 	if limit == 0 {
 		limit = 100
@@ -166,6 +166,41 @@ func (d *DAO) ListDocuments(ctx context.Context, tubname string, filter ragnar.D
 					i += 2
 				}
 			}
+		}
+
+		// Add ORDER BY clause if sort is specified
+		if len(sort) > 0 {
+			q += " ORDER BY "
+			sortClauses := make([]string, 0, len(sort))
+			for _, sortField := range sort {
+				fieldName := strings.ToLower(sortField.Field)
+				direction := "ASC"
+				if sortField.Direction == ragnar.SortDesc {
+					direction = "DESC"
+				}
+
+				// Check if it's a system field (created_at, updated_at)
+				if fieldName == "created_at" || fieldName == "updated_at" {
+					sortClauses = append(sortClauses, fmt.Sprintf("document.%s %s", fieldName, direction))
+				} else {
+					// It's a header field - need to extract and optionally cast
+					sortExpr := fmt.Sprintf("document.headers -> $%d", i)
+					args = append(args, fieldName)
+					i++
+
+					// Apply type casting for numeric sorts
+					switch sortField.ValueType {
+					case ragnar.ValueTypeInteger:
+						sortExpr = fmt.Sprintf("CAST(document.headers -> $%d AS INTEGER)", i-1)
+					case ragnar.ValueTypeNumeric:
+						sortExpr = fmt.Sprintf("CAST(document.headers -> $%d AS NUMERIC)", i-1)
+					// ValueTypeText or default - no casting needed
+					}
+
+					sortClauses = append(sortClauses, fmt.Sprintf("%s %s", sortExpr, direction))
+				}
+			}
+			q += strings.Join(sortClauses, ", ") + "\n"
 		}
 
 		q += fmt.Sprintf(" LIMIT $%d OFFSET $%d \n", i, i+1)

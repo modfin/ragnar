@@ -142,6 +142,7 @@ Use "integer" or "numeric" type hints for proper numeric comparisons.
 Example: {"status": "active", "priority": {"$gte": "10", "type": "integer"}}`),
 		with.PathParam[string]("tub", "the document tub"),
 		with.QueryParam[string]("filter", "Optional filter query in JSON format with support for comparison operators ($eq, $gt, $gte, $lt, $lte) and array contains"),
+		with.QueryParam[string]("sort", "Optional sorting of documents"),
 		with.QueryParam[int]("limit", "Optional limit query"),
 		with.QueryParam[int]("offset", "Optional offset query"),
 		with.ResponseDescription(200, "List of found documents matching filter"),

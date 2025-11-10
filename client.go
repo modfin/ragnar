@@ -20,7 +20,7 @@ type Client interface {
 	GetTub(ctx context.Context, tub string) (Tub, error)                                                                                                                                             // Get /tubs/{tub}
 	UpdateTub(ctx context.Context, tub Tub) (Tub, error)                                                                                                                                             // Put /tubs/{tub}
 	DeleteTub(ctx context.Context, tub string) (Tub, error)                                                                                                                                          // Delete /tubs/{tub}
-	GetTubDocuments(ctx context.Context, tub string, filter DocumentFilter, limit, offset int) ([]Document, error)                                                                                   // Get /tubs/{tub}/documents
+	GetTubDocuments(ctx context.Context, tub string, filter DocumentFilter, sort DocumentSort, limit, offset int) ([]Document, error)                                                                      // Get /tubs/{tub}/documents
 	GetTubDocument(ctx context.Context, tub, documentId string) (Document, error)                                                                                                                    // Get /tubs/{tub}/documents/{document_id}
 	GetTubDocumentStatus(ctx context.Context, tub, documentId string) (DocumentStatus, error)                                                                                                        // Get /tubs/{tub}/documents/{document_id}
 	CreateTubDocument(ctx context.Context, tub string, file io.Reader, contentType string, headers map[string]string) (Document, error)                                                              // Post /tubs/{tub}/documents
@@ -170,7 +170,7 @@ func (c *httpClient) DeleteTub(ctx context.Context, tub string) (Tub, error) {
 	return result, err
 }
 
-func (c *httpClient) GetTubDocuments(ctx context.Context, tub string, filter DocumentFilter, limit, offset int) ([]Document, error) {
+func (c *httpClient) GetTubDocuments(ctx context.Context, tub string, filter DocumentFilter, sort DocumentSort, limit, offset int) ([]Document, error) {
 	path := fmt.Sprintf("/tubs/%s/documents", url.PathEscape(tub))
 
 	params := map[string]string{}
@@ -180,6 +180,13 @@ func (c *httpClient) GetTubDocuments(ctx context.Context, tub string, filter Doc
 			return nil, fmt.Errorf("failed to marshal filter: %w", err)
 		}
 		params["filter"] = string(filterData)
+	}
+	if sort != nil && len(sort) > 0 {
+		sortData, err := json.Marshal(sort)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal sort: %w", err)
+		}
+		params["sort"] = string(sortData)
 	}
 	if limit > 0 {
 		params["limit"] = strconv.Itoa(limit)

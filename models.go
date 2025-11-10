@@ -287,6 +287,68 @@ func (df DocumentFilter) WithCondition(field string, operator FilterOperator, va
 	return df
 }
 
+// SortDirection represents the direction of sorting
+type SortDirection string
+
+const (
+	SortAsc  SortDirection = "asc"  // Ascending order
+	SortDesc SortDirection = "desc" // Descending order
+)
+
+// SortField represents a single field to sort by
+type SortField struct {
+	// Field name - either a header field name or "created_at" or "updated_at"
+	Field string `json:"field"`
+	// Direction of sorting (asc or desc), defaults to asc
+	Direction SortDirection `json:"direction,omitempty"`
+	// ValueType for header fields (text, integer, numeric), defaults to text
+	// Ignored for created_at and updated_at
+	ValueType ValueType `json:"type,omitempty"`
+}
+
+// DocumentSort represents sorting configuration for document queries
+// Multiple sort fields are applied in order (primary sort, then secondary, etc.)
+type DocumentSort []SortField
+
+func NewDocumentSort() DocumentSort {
+	return make(DocumentSort, 0)
+}
+
+// WithField adds a sort field with specified direction and type
+func (ds DocumentSort) WithField(field string, direction SortDirection, valueType ValueType) DocumentSort {
+	return append(ds, SortField{
+		Field:     field,
+		Direction: direction,
+		ValueType: valueType,
+	})
+}
+
+// WithFieldAsc adds a sort field with ascending direction (convenience method)
+func (ds DocumentSort) WithFieldAsc(field string, valueType ValueType) DocumentSort {
+	return ds.WithField(field, SortAsc, valueType)
+}
+
+// WithFieldDesc adds a sort field with descending direction (convenience method)
+func (ds DocumentSort) WithFieldDesc(field string, valueType ValueType) DocumentSort {
+	return ds.WithField(field, SortDesc, valueType)
+}
+
+// WithCreatedAt adds created_at sorting
+func (ds DocumentSort) WithCreatedAt(direction SortDirection) DocumentSort {
+	return append(ds, SortField{
+		Field:     "created_at",
+		Direction: direction,
+	})
+}
+
+// WithUpdatedAt adds updated_at sorting
+func (ds DocumentSort) WithUpdatedAt(direction SortDirection) DocumentSort {
+	return append(ds, SortField{
+		Field:     "updated_at",
+		Direction: direction,
+	})
+}
+
 type DocumentStatus struct {
 	Status string `db:"status" json:"status" json-description:"Document status" json-enum:"pending,processing,completed,failed"`
 }

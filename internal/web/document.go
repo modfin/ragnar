@@ -577,6 +577,10 @@ func (web *Web) GetDocuments(ctx context.Context) strut.Response[[]ragnar.Docume
 	if filterstr == "" {
 		filterstr = "{}"
 	}
+	sortstr := strut.QueryParam(ctx, "sort")
+	if sortstr == "" {
+		sortstr = "[]"
+	}
 	limit, err := strconv.Atoi(strut.QueryParam(ctx, "limit"))
 	if err != nil {
 		limit = 100
@@ -594,7 +598,15 @@ func (web *Web) GetDocuments(ctx context.Context) strut.Response[[]ragnar.Docume
 			fmt.Sprintf("Invalid JSON format in 'filter' query parameter, request_id: %s", requestId))
 	}
 
-	docs, err := web.db.ListDocuments(ctx, tub, filter, limit, offset)
+	var sort ragnar.DocumentSort
+	err = json.Unmarshal([]byte(sortstr), &sort)
+	if err != nil {
+		web.log.Error("Error unmarshalling sort json", "err", err, "request_id", requestId)
+		return strut.RespondError[[]ragnar.Document](http.StatusBadRequest,
+			fmt.Sprintf("Invalid JSON format in 'sort' query parameter, request_id: %s", requestId))
+	}
+
+	docs, err := web.db.ListDocuments(ctx, tub, filter, sort, limit, offset)
 	if err != nil {
 		web.log.Error("Error listing documents", "err", err, "request_id", requestId)
 		return strut.RespondError[[]ragnar.Document](http.StatusInternalServerError,

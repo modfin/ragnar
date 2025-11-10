@@ -278,22 +278,37 @@ if err != nil {
 }
 ```
 
-### 6. Listing and Filtering Documents
+### 6. Listing, Filtering, and Sorting Documents
 
 ```go
 // List all documents in a tub
-docs, err := client.GetTubDocuments(ctx, "my-documents", nil, 20, 0)
+docs, err := client.GetTubDocuments(ctx, "my-documents", nil, nil, 20, 0)
 if err != nil {
     log.Fatal(err)
 }
 
 // Filter documents by headers
-filter := map[string]any{
-    "project-id": "proj-123",
-    "content-type": []string{"application/pdf", "text/plain"},
+filter := ragnar.NewDocumentFilter().
+    WithEqual("project-id", "proj-123").
+    WithIn("content-type", []string{"application/pdf", "text/plain"})
+
+filteredDocs, err := client.GetTubDocuments(ctx, "my-documents", filter, nil, 10, 0)
+if err != nil {
+    log.Fatal(err)
 }
 
-filteredDocs, err := client.GetTubDocuments(ctx, "my-documents", filter, 10, 0)
+// Sort documents by created_at (descending) and then by a header field
+sort := ragnar.NewDocumentSort().
+    WithCreatedAt(ragnar.SortDesc).
+    WithFieldAsc("priority", ragnar.ValueTypeInteger)
+
+sortedDocs, err := client.GetTubDocuments(ctx, "my-documents", nil, sort, 10, 0)
+if err != nil {
+    log.Fatal(err)
+}
+
+// Combine filtering and sorting
+filteredAndSorted, err := client.GetTubDocuments(ctx, "my-documents", filter, sort, 10, 0)
 if err != nil {
     log.Fatal(err)
 }

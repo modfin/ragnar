@@ -76,7 +76,7 @@ func TestUpdateTub(t *testing.T) {
 }
 
 func TestGetTubDocuments(t *testing.T) {
-	docs, err := ragnarClient.GetTubDocuments(context.Background(), tubTestName, nil, 10, 0)
+	docs, err := ragnarClient.GetTubDocuments(context.Background(), tubTestName, nil, nil, 10, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +137,7 @@ func TestTubDocument(t *testing.T) {
 	}
 	// Test array filter (backward compatible)
 	arrayVal := "mfn-news-id"
-	fetchedDocs, err := ragnarClient.GetTubDocuments(context.Background(), tubTestName, NewDocumentFilter().WithIn(arrayVal, []string{mfnId}), 1, 0)
+	fetchedDocs, err := ragnarClient.GetTubDocuments(context.Background(), tubTestName, NewDocumentFilter().WithIn(arrayVal, []string{mfnId}), nil, 1, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,7 +150,7 @@ func TestTubDocument(t *testing.T) {
 	}
 	// Test simple equality filter (backward compatible)
 	simpleVal := "test-id-4321"
-	noMatchDocs, err := ragnarClient.GetTubDocuments(context.Background(), tubTestName, NewDocumentFilter().WithIn(arrayVal, []string{simpleVal}), 1, 0)
+	noMatchDocs, err := ragnarClient.GetTubDocuments(context.Background(), tubTestName, NewDocumentFilter().WithIn(arrayVal, []string{simpleVal}), nil, 1, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -543,7 +543,7 @@ func TestSearchTubDocumentChunks(t *testing.T) {
 }
 
 func TestDownloadMarkdownDocument(t *testing.T) {
-	docs, err := ragnarClient.GetTubDocuments(context.Background(), tubTestName, nil, 10, 0)
+	docs, err := ragnarClient.GetTubDocuments(context.Background(), tubTestName, nil, nil, 10, 0)
 	if err != nil {
 		t.Fatal("error fetching documents", err)
 	}
@@ -603,7 +603,7 @@ func TestDocumentFilterOperators(t *testing.T) {
 	// Test $gt (greater than) with integer type hint
 	gtValue := "10"
 
-	docs, err := ragnarClient.GetTubDocuments(context.Background(), tubTestName, NewDocumentFilter().WithCondition("priority", OpGreaterThan, gtValue, ValueTypeInteger), 10, 0)
+	docs, err := ragnarClient.GetTubDocuments(context.Background(), tubTestName, NewDocumentFilter().WithCondition("priority", OpGreaterThan, gtValue, ValueTypeInteger), nil, 10, 0)
 	if err != nil {
 		t.Fatal("error with $gt filter:", err)
 	}
@@ -618,7 +618,7 @@ func TestDocumentFilterOperators(t *testing.T) {
 	// Test $gte (greater than or equal) with integer type hint
 	gteValue := "10"
 
-	docs, err = ragnarClient.GetTubDocuments(context.Background(), tubTestName, NewDocumentFilter().WithCondition("priority", OpGreaterThanOrEqual, gteValue, ValueTypeInteger), 10, 0)
+	docs, err = ragnarClient.GetTubDocuments(context.Background(), tubTestName, NewDocumentFilter().WithCondition("priority", OpGreaterThanOrEqual, gteValue, ValueTypeInteger), nil, 10, 0)
 	if err != nil {
 		t.Fatal("error with $gte filter:", err)
 	}
@@ -629,7 +629,7 @@ func TestDocumentFilterOperators(t *testing.T) {
 
 	// Test $lt (less than) with integer type hint
 	ltValue := "10"
-	docs, err = ragnarClient.GetTubDocuments(context.Background(), tubTestName, NewDocumentFilter().WithCondition("priority", OpLessThan, ltValue, ValueTypeInteger), 10, 0)
+	docs, err = ragnarClient.GetTubDocuments(context.Background(), tubTestName, NewDocumentFilter().WithCondition("priority", OpLessThan, ltValue, ValueTypeInteger), nil, 10, 0)
 	if err != nil {
 		t.Fatal("error with $lt filter:", err)
 	}
@@ -644,7 +644,7 @@ func TestDocumentFilterOperators(t *testing.T) {
 	// Test $lte (less than or equal) with integer type hint
 	lteValue := "10"
 
-	docs, err = ragnarClient.GetTubDocuments(context.Background(), tubTestName, NewDocumentFilter().WithCondition("priority", OpLessThanOrEqual, lteValue, ValueTypeInteger), 10, 0)
+	docs, err = ragnarClient.GetTubDocuments(context.Background(), tubTestName, NewDocumentFilter().WithCondition("priority", OpLessThanOrEqual, lteValue, ValueTypeInteger), nil, 10, 0)
 	if err != nil {
 		t.Fatal("error with $lte filter:", err)
 	}
@@ -656,7 +656,7 @@ func TestDocumentFilterOperators(t *testing.T) {
 	// Test $eq (explicit equality) with integer type hint
 	eqValue := "10"
 
-	docs, err = ragnarClient.GetTubDocuments(context.Background(), tubTestName, NewDocumentFilter().WithCondition("priority", OpEqual, eqValue, ValueTypeInteger), 10, 0)
+	docs, err = ragnarClient.GetTubDocuments(context.Background(), tubTestName, NewDocumentFilter().WithCondition("priority", OpEqual, eqValue, ValueTypeInteger), nil, 10, 0)
 	if err != nil {
 		t.Fatal("error with $eq filter:", err)
 	}
@@ -672,7 +672,7 @@ func TestDocumentFilterOperators(t *testing.T) {
 	gteDate := "2024-06-01"
 	ltPriority := "15"
 
-	docs, err = ragnarClient.GetTubDocuments(context.Background(), tubTestName, NewDocumentFilter().WithCondition("created", OpGreaterThanOrEqual, gteDate, ValueTypeText).WithCondition("priority", OpLessThan, ltPriority, ValueTypeInteger), 10, 0)
+	docs, err = ragnarClient.GetTubDocuments(context.Background(), tubTestName, NewDocumentFilter().WithCondition("created", OpGreaterThanOrEqual, gteDate, ValueTypeText).WithCondition("priority", OpLessThan, ltPriority, ValueTypeInteger), nil, 10, 0)
 	if err != nil {
 		t.Fatal("error with combined filters:", err)
 	}
@@ -683,6 +683,128 @@ func TestDocumentFilterOperators(t *testing.T) {
 		t.Fatal("expected doc2")
 	}
 	fmt.Println(">>>combined filters test passed (text for dates, integer for priority)")
+}
+
+func TestDocumentSorting(t *testing.T) {
+	ctx := context.Background()
+
+	// Create a test tub for sorting
+	sortTubName := "sort-test-tub"
+	_, _ = ragnarClient.DeleteTub(ctx, sortTubName)
+	_, err := ragnarClient.CreateTub(ctx, Tub{TubName: sortTubName})
+	if err != nil {
+		t.Fatal("error creating sort test tub:", err)
+	}
+	defer func() { _, _ = ragnarClient.DeleteTub(ctx, sortTubName) }()
+
+	// Create multiple documents with different priorities and names
+	content := strings.NewReader("test content")
+
+	doc1, err := ragnarClient.CreateTubDocument(ctx, sortTubName, content, "text/plain", map[string]string{
+		"x-ragnar-filename": "doc1.txt",
+		"x-ragnar-priority": "30",
+		"x-ragnar-name":     "Charlie",
+	})
+	if err != nil {
+		t.Fatal("error creating doc1:", err)
+	}
+
+	time.Sleep(100 * time.Millisecond) // Ensure different created_at timestamps
+
+	content = strings.NewReader("test content")
+	doc2, err := ragnarClient.CreateTubDocument(ctx, sortTubName, content, "text/plain", map[string]string{
+		"x-ragnar-filename": "doc2.txt",
+		"x-ragnar-priority": "10",
+		"x-ragnar-name":     "Alice",
+	})
+	if err != nil {
+		t.Fatal("error creating doc2:", err)
+	}
+
+	time.Sleep(100 * time.Millisecond)
+
+	content = strings.NewReader("test content")
+	doc3, err := ragnarClient.CreateTubDocument(ctx, sortTubName, content, "text/plain", map[string]string{
+		"x-ragnar-filename": "doc3.txt",
+		"x-ragnar-priority": "20",
+		"x-ragnar-name":     "Bob",
+	})
+	if err != nil {
+		t.Fatal("error creating doc3:", err)
+	}
+
+	// Test 1: Sort by priority (integer) ascending
+	sort := NewDocumentSort().WithFieldAsc("priority", ValueTypeInteger)
+	docs, err := ragnarClient.GetTubDocuments(ctx, sortTubName, nil, sort, 10, 0)
+	if err != nil {
+		t.Fatal("error sorting by priority asc:", err)
+	}
+	if len(docs) != 3 {
+		t.Fatalf("expected 3 documents, got %d", len(docs))
+	}
+	if docs[0].DocumentId != doc2.DocumentId || docs[1].DocumentId != doc3.DocumentId || docs[2].DocumentId != doc1.DocumentId {
+		t.Fatal("documents not sorted correctly by priority ascending (expected 10, 20, 30)")
+	}
+	fmt.Println(">>>sort by priority ascending test passed")
+
+	// Test 2: Sort by priority (integer) descending
+	sort = NewDocumentSort().WithFieldDesc("priority", ValueTypeInteger)
+	docs, err = ragnarClient.GetTubDocuments(ctx, sortTubName, nil, sort, 10, 0)
+	if err != nil {
+		t.Fatal("error sorting by priority desc:", err)
+	}
+	if docs[0].DocumentId != doc1.DocumentId || docs[1].DocumentId != doc3.DocumentId || docs[2].DocumentId != doc2.DocumentId {
+		t.Fatal("documents not sorted correctly by priority descending (expected 30, 20, 10)")
+	}
+	fmt.Println(">>>sort by priority descending test passed")
+
+	// Test 3: Sort by name (text) ascending
+	sort = NewDocumentSort().WithFieldAsc("name", ValueTypeText)
+	docs, err = ragnarClient.GetTubDocuments(ctx, sortTubName, nil, sort, 10, 0)
+	if err != nil {
+		t.Fatal("error sorting by name asc:", err)
+	}
+	if docs[0].DocumentId != doc2.DocumentId || docs[1].DocumentId != doc3.DocumentId || docs[2].DocumentId != doc1.DocumentId {
+		t.Fatal("documents not sorted correctly by name ascending (expected Alice, Bob, Charlie)")
+	}
+	fmt.Println(">>>sort by name ascending test passed")
+
+	// Test 4: Sort by created_at descending (newest first)
+	sort = NewDocumentSort().WithCreatedAt(SortDesc)
+	docs, err = ragnarClient.GetTubDocuments(ctx, sortTubName, nil, sort, 10, 0)
+	if err != nil {
+		t.Fatal("error sorting by created_at desc:", err)
+	}
+	if docs[0].DocumentId != doc3.DocumentId || docs[1].DocumentId != doc2.DocumentId || docs[2].DocumentId != doc1.DocumentId {
+		t.Fatal("documents not sorted correctly by created_at descending (expected doc3, doc2, doc1)")
+	}
+	fmt.Println(">>>sort by created_at descending test passed")
+
+	// Test 5: Sort by created_at ascending (oldest first)
+	sort = NewDocumentSort().WithCreatedAt(SortAsc)
+	docs, err = ragnarClient.GetTubDocuments(ctx, sortTubName, nil, sort, 10, 0)
+	if err != nil {
+		t.Fatal("error sorting by created_at asc:", err)
+	}
+	if docs[0].DocumentId != doc1.DocumentId || docs[1].DocumentId != doc2.DocumentId || docs[2].DocumentId != doc3.DocumentId {
+		t.Fatal("documents not sorted correctly by created_at ascending (expected doc1, doc2, doc3)")
+	}
+	fmt.Println(">>>sort by created_at ascending test passed")
+
+	// Test 6: Multiple sort fields - sort by name desc, then priority asc
+	sort = NewDocumentSort().
+		WithFieldDesc("name", ValueTypeText).
+		WithFieldAsc("priority", ValueTypeInteger)
+	docs, err = ragnarClient.GetTubDocuments(ctx, sortTubName, nil, sort, 10, 0)
+	if err != nil {
+		t.Fatal("error with multiple sort fields:", err)
+	}
+	if docs[0].DocumentId != doc1.DocumentId || docs[1].DocumentId != doc3.DocumentId || docs[2].DocumentId != doc2.DocumentId {
+		t.Fatal("documents not sorted correctly with multiple fields (expected Charlie, Bob, Alice)")
+	}
+	fmt.Println(">>>multiple sort fields test passed")
+
+	fmt.Println(">>>all sorting tests passed")
 }
 
 func TestDeleteTub(t *testing.T) {
@@ -808,7 +930,7 @@ func TestUnauthorizedAccess(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), unauthorizedError) {
 		t.Fatal("expected 401 deleting tub", err)
 	}
-	_, err = ragnarUnauthorizedClient.GetTubDocuments(context.Background(), tubTestName, nil, 10, 0)
+	_, err = ragnarUnauthorizedClient.GetTubDocuments(context.Background(), tubTestName, nil, nil, 10, 0)
 	if err == nil || !strings.Contains(err.Error(), unauthorizedError) {
 		t.Fatal("expected 401 fetching tub documents", err)
 	}
