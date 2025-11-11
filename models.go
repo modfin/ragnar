@@ -101,6 +101,7 @@ type FilterValue struct {
 
 // DocumentFilter represents filters for document queries based on headers
 // Each field can have multiple filter conditions that are combined with AND logic
+// Special key "document_id" filters on the document_id column instead of headers
 type DocumentFilter map[string][]FilterValue
 
 func NewDocumentFilter() DocumentFilter {

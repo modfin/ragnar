@@ -685,6 +685,114 @@ func TestDocumentFilterOperators(t *testing.T) {
 	fmt.Println(">>>combined filters test passed (text for dates, integer for priority)")
 }
 
+func TestDocumentIdFiltering(t *testing.T) {
+	ctx := context.Background()
+
+	// Create a test tub for document_id filtering
+	filterTubName := "doc-id-filter-test-tub"
+	_, _ = ragnarClient.DeleteTub(ctx, filterTubName)
+	_, err := ragnarClient.CreateTub(ctx, Tub{TubName: filterTubName})
+	if err != nil {
+		t.Fatal("error creating filter test tub:", err)
+	}
+	defer func() { _, _ = ragnarClient.DeleteTub(ctx, filterTubName) }()
+
+	// Create multiple test documents
+	content := strings.NewReader("test content")
+
+	doc1, err := ragnarClient.CreateTubDocument(ctx, filterTubName, content, "text/plain", map[string]string{
+		"x-ragnar-filename": "doc1.txt",
+		"x-ragnar-priority": "10",
+	})
+	if err != nil {
+		t.Fatal("error creating doc1:", err)
+	}
+
+	content = strings.NewReader("test content")
+	doc2, err := ragnarClient.CreateTubDocument(ctx, filterTubName, content, "text/plain", map[string]string{
+		"x-ragnar-filename": "doc2.txt",
+		"x-ragnar-priority": "20",
+	})
+	if err != nil {
+		t.Fatal("error creating doc2:", err)
+	}
+
+	content = strings.NewReader("test content")
+	doc3, err := ragnarClient.CreateTubDocument(ctx, filterTubName, content, "text/plain", map[string]string{
+		"x-ragnar-filename": "doc3.txt",
+		"x-ragnar-priority": "30",
+	})
+	if err != nil {
+		t.Fatal("error creating doc3:", err)
+	}
+
+	// Test 1: Filter by single document_id using WithEqual
+	filter := NewDocumentFilter().WithEqual("document_id", doc1.DocumentId)
+	docs, err := ragnarClient.GetTubDocuments(ctx, filterTubName, filter, nil, 10, 0)
+	if err != nil {
+		t.Fatal("error filtering by single document_id:", err)
+	}
+	if len(docs) != 1 {
+		t.Fatalf("expected 1 document, got %d", len(docs))
+	}
+	if docs[0].DocumentId != doc1.DocumentId {
+		t.Fatalf("expected document %s, got %s", doc1.DocumentId, docs[0].DocumentId)
+	}
+	fmt.Println(">>>filter by single document_id test passed")
+
+	// Test 2: Filter by multiple document_ids using WithIn
+	filter = NewDocumentFilter().WithIn("document_id", []string{doc1.DocumentId, doc3.DocumentId})
+	docs, err = ragnarClient.GetTubDocuments(ctx, filterTubName, filter, nil, 10, 0)
+	if err != nil {
+		t.Fatal("error filtering by multiple document_ids:", err)
+	}
+	if len(docs) != 2 {
+		t.Fatalf("expected 2 documents, got %d", len(docs))
+	}
+	foundDoc1, foundDoc3 := false, false
+	for _, doc := range docs {
+		if doc.DocumentId == doc1.DocumentId {
+			foundDoc1 = true
+		}
+		if doc.DocumentId == doc3.DocumentId {
+			foundDoc3 = true
+		}
+	}
+	if !foundDoc1 || !foundDoc3 {
+		t.Fatal("expected to find doc1 and doc3")
+	}
+	fmt.Println(">>>filter by multiple document_ids test passed")
+
+	// Test 3: Filter by document_id and header field (combined)
+	filter = NewDocumentFilter().
+		WithIn("document_id", []string{doc1.DocumentId, doc2.DocumentId}).
+		WithCondition("priority", OpGreaterThan, "10", ValueTypeInteger)
+	docs, err = ragnarClient.GetTubDocuments(ctx, filterTubName, filter, nil, 10, 0)
+	if err != nil {
+		t.Fatal("error filtering by document_id and header:", err)
+	}
+	if len(docs) != 1 {
+		t.Fatalf("expected 1 document (doc2 with priority > 10), got %d", len(docs))
+	}
+	if docs[0].DocumentId != doc2.DocumentId {
+		t.Fatalf("expected doc2, got %s", docs[0].DocumentId)
+	}
+	fmt.Println(">>>filter by document_id and header test passed")
+
+	// Test 4: Filter by non-existent document_id
+	filter = NewDocumentFilter().WithEqual("document_id", "doc-0000-0000-0000-000000000000")
+	docs, err = ragnarClient.GetTubDocuments(ctx, filterTubName, filter, nil, 10, 0)
+	if err != nil {
+		t.Fatal("error filtering by non-existent document_id:", err)
+	}
+	if len(docs) != 0 {
+		t.Fatalf("expected 0 documents, got %d", len(docs))
+	}
+	fmt.Println(">>>filter by non-existent document_id test passed")
+
+	fmt.Println(">>>all document_id filtering tests passed")
+}
+
 func TestDocumentSorting(t *testing.T) {
 	ctx := context.Background()
 

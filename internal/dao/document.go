@@ -113,7 +113,50 @@ func (d *DAO) ListDocuments(ctx context.Context, tubname string, filter ragnar.D
 		args = append(args, tubname)
 
 		i := 2
+
+		// Handle document_id filter separately (it's a column, not a header)
+		if documentIdFilters, hasDocumentId := filter["document_id"]; hasDocumentId {
+			for _, filterValue := range documentIdFilters {
+				if filterValue.Simple != nil {
+					q += fmt.Sprintf(" AND document.document_id = $%d \n", i)
+					args = append(args, *filterValue.Simple)
+					i++
+				} else if filterValue.Array != nil {
+					q += fmt.Sprintf(" AND document.document_id = ANY($%d) \n", i)
+					args = append(args, filterValue.Array)
+					i++
+				} else if filterValue.Condition != nil {
+					leftSide := "document.document_id"
+					rightSide := fmt.Sprintf("$%d", i)
+
+					switch filterValue.Condition.Operator {
+					case ragnar.OpEqual:
+						q += fmt.Sprintf(" AND %s = %s \n", leftSide, rightSide)
+					case ragnar.OpGreaterThan:
+						q += fmt.Sprintf(" AND %s > %s \n", leftSide, rightSide)
+					case ragnar.OpGreaterThanOrEqual:
+						q += fmt.Sprintf(" AND %s >= %s \n", leftSide, rightSide)
+					case ragnar.OpLessThan:
+						q += fmt.Sprintf(" AND %s < %s \n", leftSide, rightSide)
+					case ragnar.OpLessThanOrEqual:
+						q += fmt.Sprintf(" AND %s <= %s \n", leftSide, rightSide)
+					case ragnar.OpIn:
+						q += fmt.Sprintf(" AND %s = %s \n", leftSide, rightSide)
+					default:
+						return fmt.Errorf("unsupported operator: %s", filterValue.Condition.Operator)
+					}
+					args = append(args, filterValue.Condition.Value)
+					i++
+				}
+			}
+		}
+
+		// Handle header filters
 		for fieldName, filterValues := range filter {
+			// Skip document_id as we already handled it above
+			if fieldName == "document_id" {
+				continue
+			}
 			fieldName = strings.ToLower(fieldName)
 
 			// Process each filter value for this field (multiple conditions are AND-ed together)
