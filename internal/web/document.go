@@ -501,20 +501,25 @@ func (web *Web) handleMultipartUpsert(w http.ResponseWriter, r *http.Request, ct
 		if err != nil {
 			web.log.Error("error deleting old chunks", "err", err, "request_id", requestId)
 		}
-		for _, chunk := range chunks {
-			chunk.TubId = doc.TubId
-			chunk.TubName = doc.TubName
-			chunk.DocumentId = doc.DocumentId
-			err = web.db.InternalInsertChunk(chunk)
-			if err != nil {
-				web.log.Error("error inserting chunk", "err", err, "request_id", requestId)
-				http.Error(w, "error inserting chunk, request_id: "+requestId, http.StatusInternalServerError)
-				if isNewDocument {
-					web.stor.DeleteDocument(ctx, doc.TubName, doc.DocumentId)
-					web.db.DeleteDocument(ctx, doc.TubName, doc.DocumentId)
-				}
-				return
+		var ragnarChunks []ragnar.Chunk
+		for i, chunk := range chunks {
+			ragnarChunks = append(ragnarChunks, ragnar.Chunk{
+				ChunkId:    i,
+				DocumentId: doc.DocumentId,
+				TubId:      doc.TubId,
+				TubName:    doc.TubName,
+				Content:    chunk.Content,
+			})
+		}
+		err = web.db.InternalInsertChunks(ragnarChunks)
+		if err != nil {
+			web.log.Error("failed to insert chunks", "error", err)
+			http.Error(w, "error inserting chunks, request_id: "+requestId, http.StatusInternalServerError)
+			if isNewDocument {
+				web.stor.DeleteDocument(ctx, doc.TubName, doc.DocumentId)
+				web.db.DeleteDocument(ctx, doc.TubName, doc.DocumentId)
 			}
+			return
 		}
 	}
 

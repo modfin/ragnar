@@ -9,6 +9,7 @@ import (
 	"github.com/modfin/ragnar/internal/document"
 	"github.com/modfin/ragnar/internal/util"
 	"io"
+	"time"
 )
 
 func (d *Docket) ScheduleDocumentConversion(doc ragnar.Document) error {
@@ -17,6 +18,7 @@ func (d *Docket) ScheduleDocumentConversion(doc ragnar.Document) error {
 
 func documentConversion(d *Docket) func(pqdocket.RunningTask) error {
 	return func(task pqdocket.RunningTask) error {
+		start := time.Now()
 		l := d.log.With("task", task.TaskId(), "func", task.Func())
 		l.Info("starting conversion of document")
 
@@ -83,6 +85,7 @@ func documentConversion(d *Docket) func(pqdocket.RunningTask) error {
 			l.Error("failed to schedule chunking", "error", err)
 			return fmt.Errorf("as documentConversion failed to schedule chunking: %w", err)
 		}
+		l.With("duration_ms", time.Since(start).Milliseconds()).Info("task completed")
 
 		return nil
 	}

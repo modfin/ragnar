@@ -6,6 +6,7 @@ import (
 	"github.com/modfin/bellman/services/voyageai"
 	"github.com/modfin/pqdocket"
 	"github.com/modfin/ragnar"
+	"time"
 )
 
 func (d *Docket) ScheduleChunkEmbedding(doc ragnar.Document) error {
@@ -14,6 +15,7 @@ func (d *Docket) ScheduleChunkEmbedding(doc ragnar.Document) error {
 
 func chunkEmbed(d *Docket) func(pqdocket.RunningTask) error {
 	return func(task pqdocket.RunningTask) error {
+		start := time.Now()
 		l := d.log.With("task", task.TaskId(), "func", task.Func())
 		l.Info("starting embedding of document")
 
@@ -68,6 +70,7 @@ func chunkEmbed(d *Docket) func(pqdocket.RunningTask) error {
 			l.Error("failed to set embeds", "error", err)
 			return fmt.Errorf("in chunkEmbed ai.InternalSetEmbeds: %w", err)
 		}
+		l.With("duration_ms", time.Since(start).Milliseconds()).Info("task completed")
 
 		return nil
 	}

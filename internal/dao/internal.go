@@ -81,6 +81,41 @@ func (d *DAO) InternalInsertChunk(chunk ragnar.Chunk) error {
 	return nil
 }
 
+func (d *DAO) InternalInsertChunks(chunks []ragnar.Chunk) error {
+	if len(chunks) == 0 {
+		return nil
+	}
+	chunk := chunks[0]
+	schema, err := tubToSchema(chunk.TubName)
+	if err != nil {
+		return fmt.Errorf("at InternalInsertChunks, error getting schema from tubname, %s: %w", chunk.TubName, err)
+	}
+	for _, c := range chunks {
+		if c.TubName != chunk.TubName {
+			return fmt.Errorf("mismatch in chunk tub name")
+		}
+	}
+
+	q := `
+INSERT INTO "%s"."chunk" (chunk_id, document_id, tub_id, tub_name, content) 
+VALUES 
+%s`
+
+	values := make([]string, len(chunks))
+	args := make([]interface{}, 0, len(chunks)*5)
+	for i, chunk := range chunks {
+		values[i] = fmt.Sprintf("($%d, $%d, $%d, $%d, $%d)", len(args)+1, len(args)+2, len(args)+3, len(args)+4, len(args)+5)
+		args = append(args, chunk.ChunkId, chunk.DocumentId, chunk.TubId, chunk.TubName, chunk.Content)
+	}
+	q = fmt.Sprintf(q, schema, strings.Join(values, ",\n"))
+	_, err = d.db.Exec(q, args...)
+	if err != nil {
+		return fmt.Errorf("at InternalInsertChunk, error inserting chunk: %w", err)
+	}
+
+	return nil
+}
+
 func (d *DAO) InternalGetChunks(doc ragnar.Document) ([]ragnar.Chunk, error) {
 	tubname := doc.TubName
 	schema, err := tubToSchema(tubname)
@@ -151,6 +186,9 @@ func (d *DAO) InternalSetEmbeds(doc ragnar.Document, model embed.Model, chunks [
 	if len(chunks) != len(vectors) {
 		return fmt.Errorf("number of chunks (%d) does not match number of vectors (%d)", len(chunks), len(vectors))
 	}
+	if len(chunks) == 0 {
+		return nil
+	}
 	tubname := doc.TubName
 	schema, err := tubToSchema(tubname)
 	if err != nil {
@@ -160,15 +198,25 @@ func (d *DAO) InternalSetEmbeds(doc ragnar.Document, model embed.Model, chunks [
 	if err != nil {
 		return fmt.Errorf("error getting column name from model, %s: %w", model.FQN(), err)
 	}
-	q := `UPDATE "%s".chunk SET "%s" = CAST($1 AS VECTOR(%d)) WHERE document_id = $2 AND tub_id = $3 AND chunk_id = $4`
-	q = fmt.Sprintf(q, schema, colName, model.OutputDimensions)
+	q := `
+UPDATE "%s".chunk AS o 
+SET "%s" = n.embedding
+FROM (VALUES 
+%s
+) AS n(document_id, tub_id, chunk_id, embedding)
+WHERE o.document_id = n.document_id AND o.tub_id = n.tub_id AND o.chunk_id = n.chunk_id`
+	values := make([]string, len(chunks))
+	args := make([]any, 0, len(chunks)*4)
 	for i, chunk := range chunks {
-		_, err = d.db.Exec(q, vectorToSQLArray(vectors[i]), chunk.DocumentId, chunk.TubId, chunk.ChunkId)
-		if err != nil {
-			return fmt.Errorf("error updating chunk embedding: %w", err)
-		}
+		values[i] = fmt.Sprintf("(CAST($%d AS TEXT), CAST($%d AS TEXT), CAST($%d AS INTEGER), CAST($%d AS VECTOR(%d)))", len(args)+1, len(args)+2, len(args)+3, len(args)+4, model.OutputDimensions)
+		args = append(args, chunk.DocumentId, chunk.TubId, chunk.ChunkId, vectorToSQLArray(vectors[i]))
 	}
 
+	q = fmt.Sprintf(q, schema, colName, strings.Join(values, ",\n"))
+	_, err = d.db.Exec(q, args...)
+	if err != nil {
+		return fmt.Errorf("error setting embeds: %w", err)
+	}
 	return nil
 }
 

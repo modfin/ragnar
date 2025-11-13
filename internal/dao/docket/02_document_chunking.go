@@ -7,6 +7,7 @@ import (
 	"github.com/modfin/ragnar"
 	"github.com/modfin/ragnar/internal/chunker"
 	"io"
+	"time"
 )
 
 func (d *Docket) ScheduleDocumentChunking(doc ragnar.Document) error {
@@ -15,6 +16,7 @@ func (d *Docket) ScheduleDocumentChunking(doc ragnar.Document) error {
 
 func chunkDocument(d *Docket) func(pqdocket.RunningTask) error {
 	return func(task pqdocket.RunningTask) error {
+		start := time.Now()
 		l := d.log.With("task", task.TaskId(), "func", task.Func())
 		l.Info("starting chunking document")
 
@@ -82,19 +84,20 @@ func chunkDocument(d *Docket) func(pqdocket.RunningTask) error {
 			return nil
 		}
 
+		var ragnarChunks []ragnar.Chunk
 		for i, chunk := range chunks {
-			// TODO map and batch the inserts?
-			err = d.db.InternalInsertChunk(ragnar.Chunk{
+			ragnarChunks = append(ragnarChunks, ragnar.Chunk{
 				ChunkId:    i,
 				DocumentId: doc.DocumentId,
 				TubId:      doc.TubId,
 				TubName:    doc.TubName,
 				Content:    chunk,
 			})
-			if err != nil {
-				l.Error("failed to insert chunk", "error", err)
-				return fmt.Errorf("chunkDocument, could not insert chunk: %w", err)
-			}
+		}
+		err = d.db.InternalInsertChunks(ragnarChunks)
+		if err != nil {
+			l.Error("failed to insert chunks", "error", err)
+			return fmt.Errorf("chunkDocument, could not insert chunks: %w", err)
 		}
 
 		err = d.ScheduleChunkEmbedding(doc)
@@ -102,6 +105,7 @@ func chunkDocument(d *Docket) func(pqdocket.RunningTask) error {
 			l.Error("failed to schedule chunk embedding", "error", err)
 			return fmt.Errorf("chunkDocument, could not schedule chunk embedding: %w", err)
 		}
+		l.With("duration_ms", time.Since(start).Milliseconds()).Info("task completed")
 
 		return nil
 	}
