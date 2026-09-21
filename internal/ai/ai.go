@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 
 	"github.com/modfin/bellman"
 	"github.com/modfin/bellman/models/embed"
 	"github.com/modfin/bellman/models/gen"
+	"github.com/modfin/bellman/services/voyageai"
 	"github.com/modfin/ragnar"
 )
 
@@ -36,10 +38,31 @@ type AI struct {
 	bell   *bellman.Bellman
 }
 
+// EmbedModelOf resolves a tub's embed_model setting ("Provider/name") to a
+// registered model. Only registered models are accepted: the vector column
+// width and the batch token limit come from the model definition, so a bare
+// name parsed from the string would embed with zero dimensions and fail later
+// in a less obvious place. An empty setting means the configured default.
 func (ai *AI) EmbedModelOf(modelFQN string) (embed.Model, error) {
-	model, err := embed.ToModel(modelFQN)
+	modelFQN = strings.TrimSpace(modelFQN)
+	if modelFQN == "" {
+		modelFQN = ai.config.DefaultEmbedModel
+	}
+	parsed, err := embed.ToModel(modelFQN)
 	if err != nil {
-		return embed.ToModel(ai.config.DefaultEmbedModel)
+		return embed.Model{}, fmt.Errorf("embed model %q: %w", modelFQN, err)
+	}
+	if !strings.EqualFold(parsed.Provider, voyageai.Provider) {
+		return embed.Model{}, fmt.Errorf("embed model %q: only %s models are supported", modelFQN, voyageai.Provider)
+	}
+	model, ok := voyageai.EmbedModels[parsed.Name]
+	if !ok {
+		names := make([]string, 0, len(voyageai.EmbedModels))
+		for name := range voyageai.EmbedModels {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		return embed.Model{}, fmt.Errorf("embed model %q is not a known %s model; known: %s", modelFQN, voyageai.Provider, strings.Join(names, ", "))
 	}
 	return model, nil
 }
