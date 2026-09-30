@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/modfin/ragnar/internal/util"
@@ -13,6 +15,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -763,4 +766,53 @@ func (web *Web) GetDocumentStatus(ctx context.Context) strut.Response[ragnar.Doc
 			fmt.Sprintf("Error fetching document status, request_id: %s", requestId))
 	}
 	return strut.RespondOk(status)
+}
+
+// reservedHeaders are set from the uploaded file and cannot be edited.
+var reservedHeaders = map[string]bool{"content-type": true, "content-length": true, "content-disposition": true}
+
+var headerKeyRegExp = regexp.MustCompile(`^[a-z0-9_-]+$`)
+
+// UpdateDocumentHeaders changes a document's custom headers in place: keys
+// with a value are set, keys with null are removed, everything else stays.
+// The x-ragnar- prefix is optional on keys. Content is not touched, so no
+// re-chunking or re-embedding happens.
+func (web *Web) UpdateDocumentHeaders(ctx context.Context, body map[string]*string) strut.Response[ragnar.Document] {
+	requestId := GetRequestID(ctx)
+	tubname := strut.PathParam(ctx, "tub")
+	documentId := strut.PathParam(ctx, "document_id")
+	if tubname == "" || documentId == "" {
+		return strut.RespondError[ragnar.Document](http.StatusBadRequest, "tub and document_id are required, request_id: "+requestId)
+	}
+	if len(body) == 0 {
+		return strut.RespondError[ragnar.Document](http.StatusBadRequest, "no headers given, request_id: "+requestId)
+	}
+	set := map[string]string{}
+	var remove []string
+	for k, v := range body {
+		k = strings.TrimPrefix(strings.ToLower(strings.TrimSpace(k)), headerPrefix)
+		if !headerKeyRegExp.MatchString(k) {
+			return strut.RespondError[ragnar.Document](http.StatusBadRequest, fmt.Sprintf("invalid header name %q, request_id: %s", k, requestId))
+		}
+		if reservedHeaders[k] {
+			return strut.RespondError[ragnar.Document](http.StatusBadRequest, fmt.Sprintf("header %q is set from the file and cannot be changed, request_id: %s", k, requestId))
+		}
+		if v == nil {
+			remove = append(remove, k)
+			continue
+		}
+		set[k] = *v
+	}
+	doc, err := web.db.UpdateDocumentHeaders(ctx, tubname, documentId, set, remove)
+	if err != nil {
+		web.log.Error("error updating document headers", "err", err, "request_id", requestId)
+		if errors.Is(err, sql.ErrNoRows) {
+			return strut.RespondError[ragnar.Document](http.StatusNotFound, "document not found, request_id: "+requestId)
+		}
+		if strings.Contains(err.Error(), "missing required document header") {
+			return strut.RespondError[ragnar.Document](http.StatusBadRequest, fmt.Sprintf("%v, request_id: %s", err, requestId))
+		}
+		return strut.RespondError[ragnar.Document](http.StatusInternalServerError, "error updating document headers, request_id: "+requestId)
+	}
+	return strut.RespondOk(doc)
 }

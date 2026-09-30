@@ -196,6 +196,15 @@ updatedDoc, err := client.UpdateTubDocument(ctx, "my-documents",
 if err != nil {
     log.Fatal(err)
 }
+
+// Change headers only: nothing is re-chunked or re-embedded. A nil value
+// removes the header; headers not mentioned are kept.
+archived := "true"
+doc, err = client.UpdateTubDocumentHeaders(ctx, "my-documents", doc.DocumentId,
+    map[string]*string{"archived": &archived, "draft": nil})
+if err != nil {
+    log.Fatal(err)
+}
 ```
 
 ### 3. Document Processing Status
@@ -407,6 +416,7 @@ The service provides a complete REST API:
 - `POST /tubs/{tub}/documents` - Upload document
 - `GET /tubs/{tub}/documents/{id}` - Get document
 - `PUT /tubs/{tub}/documents/{id}` - Update document
+- `PUT /tubs/{tub}/documents/{id}/headers` - Update custom headers in place (no re-processing)
 - `DELETE /tubs/{tub}/documents/{id}` - Delete document
 - `GET /tubs/{tub}/documents/{id}/download` - Download original
 - `GET /tubs/{tub}/documents/{id}/download/markdown` - Download markdown

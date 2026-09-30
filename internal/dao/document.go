@@ -4,9 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/google/uuid"
+	"maps"
 	"strconv"
 	"strings"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/modfin/ragnar/internal/util"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/modfin/ragnar"
@@ -76,6 +80,60 @@ func (d *DAO) UpsertDocument(ctx context.Context, doc ragnar.Document) (ragnar.D
 		return ragnar.Document{}, err
 	}
 
+	return retdoc, nil
+}
+
+// UpdateDocumentHeaders merges set into the document's headers and drops the
+// remove keys, leaving file, markdown, chunks and embeddings untouched. The
+// tub's required headers must still be present afterwards.
+func (d *DAO) UpdateDocumentHeaders(ctx context.Context, tubname, documentId string, set map[string]string, remove []string) (ragnar.Document, error) {
+	tubname = strings.ToLower(tubname)
+	if !bucketNameRegExp.MatchString(tubname) {
+		return ragnar.Document{}, errors.New("tub name must only contain a-z0-9_-, and be at least 3 character long")
+	}
+	tub, err := d.GetTub(ctx, tubname)
+	if err != nil {
+		return ragnar.Document{}, fmt.Errorf("error getting document's tub info: %w", err)
+	}
+	current, err := d.GetDocument(ctx, tubname, documentId)
+	if err != nil {
+		return ragnar.Document{}, err
+	}
+	merged := pgtype.Hstore{}
+	maps.Copy(merged, current.Headers)
+	for _, k := range remove {
+		delete(merged, k)
+	}
+	for k, v := range set {
+		merged[k] = util.Ptr(v)
+	}
+	for _, h := range tub.GetRequiredDocumentHeaders() {
+		if _, ok := merged[h]; !ok {
+			return ragnar.Document{}, fmt.Errorf("missing required document header: %s", h)
+		}
+	}
+
+	var retdoc ragnar.Document
+	err = d.txx(ctx, func(tx *sqlx.Tx) error {
+		err := allowedTubOperation(tx, ctx, tubname, auth.ALLOW_UPDATE)
+		if err != nil {
+			return fmt.Errorf("error checking permission to update document: %w", err)
+		}
+		schema, err := tubToSchema(tubname)
+		if err != nil {
+			return fmt.Errorf("error getting schema: %w", err)
+		}
+		q := fmt.Sprintf(`UPDATE "%s"."document"
+			 SET headers = CAST(''||$3||'' AS HSTORE),
+			     updated_at = CASE WHEN headers IS DISTINCT FROM CAST(''||$3||'' AS HSTORE) THEN now() ELSE updated_at END
+			 WHERE tub_name = $1
+			   AND document_id = $2
+			 RETURNING *`, schema)
+		return tx.GetContext(ctx, &retdoc, q, tubname, documentId, merged)
+	})
+	if err != nil {
+		return ragnar.Document{}, err
+	}
 	return retdoc, nil
 }
 
@@ -237,7 +295,7 @@ func (d *DAO) ListDocuments(ctx context.Context, tubname string, filter ragnar.D
 						sortExpr = fmt.Sprintf("CAST(document.headers -> $%d AS INTEGER)", i-1)
 					case ragnar.ValueTypeNumeric:
 						sortExpr = fmt.Sprintf("CAST(document.headers -> $%d AS NUMERIC)", i-1)
-					// ValueTypeText or default - no casting needed
+						// ValueTypeText or default - no casting needed
 					}
 
 					sortClauses = append(sortClauses, fmt.Sprintf("%s %s", sortExpr, direction))

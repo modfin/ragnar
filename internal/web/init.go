@@ -180,6 +180,21 @@ Example: {"status": "active", "priority": {"$gte": "10", "type": "integer"}}`),
 		with.ResponseDescription(200, "Successfully updated document"),
 	)
 
+	strut.Put(
+		s.With(AuthenticateTubAccess(log, db, PathParam("tub"), auth.ALLOW_UPDATE)),
+		"/tubs/{tub}/documents/{document_id}/headers",
+		web.UpdateDocumentHeaders,
+		with.OperationId("update-document-headers"),
+		with.Description(`Update a document's custom headers in place. The body is a JSON object of header
+name to value; a null value removes the header, headers not mentioned are kept. The x-ragnar- prefix
+is optional. File, markdown, chunks and embeddings are untouched, so this is cheap compared to
+re-uploading. content-type, content-length and content-disposition cannot be changed, and the tub's
+required headers cannot be removed.`),
+		with.PathParam[string]("tub", "the document tub"),
+		with.PathParam[string]("document_id", "The document id"),
+		with.ResponseDescription(200, "The document with its updated headers"),
+	)
+
 	strut.Get(
 		s.With(AuthenticateTubAccess(log, db, PathParam("tub"), auth.ALLOW_READ)),
 		"/tubs/{tub}/documents/{document_id}/download",

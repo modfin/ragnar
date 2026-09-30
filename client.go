@@ -20,13 +20,14 @@ type Client interface {
 	GetTub(ctx context.Context, tub string) (Tub, error)                                                                                                                                             // Get /tubs/{tub}
 	UpdateTub(ctx context.Context, tub Tub) (Tub, error)                                                                                                                                             // Put /tubs/{tub}
 	DeleteTub(ctx context.Context, tub string) (Tub, error)                                                                                                                                          // Delete /tubs/{tub}
-	GetTubDocuments(ctx context.Context, tub string, filter DocumentFilter, sort DocumentSort, limit, offset int) ([]Document, error)                                                                      // Get /tubs/{tub}/documents
+	GetTubDocuments(ctx context.Context, tub string, filter DocumentFilter, sort DocumentSort, limit, offset int) ([]Document, error)                                                                // Get /tubs/{tub}/documents
 	GetTubDocument(ctx context.Context, tub, documentId string) (Document, error)                                                                                                                    // Get /tubs/{tub}/documents/{document_id}
 	GetTubDocumentStatus(ctx context.Context, tub, documentId string) (DocumentStatus, error)                                                                                                        // Get /tubs/{tub}/documents/{document_id}
 	CreateTubDocument(ctx context.Context, tub string, file io.Reader, contentType string, headers map[string]string) (Document, error)                                                              // Post /tubs/{tub}/documents
 	CreateTubDocumentWithOptionals(ctx context.Context, tub string, file io.Reader, contentType string, markdown io.Reader, chunks []Chunk, headers map[string]string) (Document, error)             // Post /tubs/{tub}/documents (multipart)
 	UpdateTubDocument(ctx context.Context, tub, documentId string, file io.Reader, contentType string, headers map[string]string) (Document, error)                                                  // Put /tubs/{tub}/documents/{document_id}
 	UpdateTubDocumentWithOptionals(ctx context.Context, tub, documentId string, file io.Reader, contentType string, markdown io.Reader, chunks []Chunk, headers map[string]string) (Document, error) // Put /tubs/{tub}/documents/{document_id} (multipart)
+	UpdateTubDocumentHeaders(ctx context.Context, tub, documentId string, headers map[string]*string) (Document, error)                                                                              // Put /tubs/{tub}/documents/{document_id}/headers
 	DownloadTubDocument(ctx context.Context, tub, documentId string) (io.ReadCloser, error)                                                                                                          // Get /tubs/{tub}/documents/{document_id}/download
 	DownloadTubDocumentMarkdown(ctx context.Context, tub, documentId string) (io.ReadCloser, error)                                                                                                  // Get /tubs/{tub}/documents/{document_id}/download/markdown
 	DeleteTubDocument(ctx context.Context, tub, documentId string) error                                                                                                                             // Delete /tubs/{tub}/documents/{document_id}
@@ -356,6 +357,15 @@ func (c *httpClient) CreateTubDocumentWithOptionals(ctx context.Context, tub str
 // UpdateTubDocumentWithOptionals updates a document with optional markdown and chunks using multipart form data
 func (c *httpClient) UpdateTubDocumentWithOptionals(ctx context.Context, tub, documentId string, file io.Reader, contentType string, markdown io.Reader, chunks []Chunk, headers map[string]string) (Document, error) {
 	return c.upsertTubDocumentWithOptionals(ctx, "PUT", fmt.Sprintf("/tubs/%s/documents/%s", url.PathEscape(tub), url.PathEscape(documentId)), file, contentType, markdown, chunks, headers)
+}
+
+// UpdateTubDocumentHeaders changes custom headers in place without touching
+// the document's content: keys with a value are set, keys with a nil value
+// are removed, other headers are kept. The x-ragnar- prefix is optional.
+func (c *httpClient) UpdateTubDocumentHeaders(ctx context.Context, tub, documentId string, headers map[string]*string) (Document, error) {
+	var result Document
+	err := c.doJSONRequest(ctx, "PUT", fmt.Sprintf("/tubs/%s/documents/%s/headers", url.PathEscape(tub), url.PathEscape(documentId)), nil, headers, &result)
+	return result, err
 }
 
 // upsertTubDocumentWithOptionals is the common implementation for create/update with optionals

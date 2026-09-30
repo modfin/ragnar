@@ -1094,3 +1094,107 @@ func waitUntilStatusCompletedOrTimeout(tubName, documentId string, timeout time.
 		time.Sleep(5 * time.Second)
 	}
 }
+
+// Settings passed at creation are stored, no follow-up update needed.
+func TestCreateTubWithSettings(t *testing.T) {
+	ctx := context.Background()
+	tubName := fmt.Sprintf("settings-test-%d", time.Now().UnixNano()%1_000_000)
+	model := "VoyageAI/voyage-context-4"
+	tub, err := ragnarClient.CreateTub(ctx, Tub{
+		TubName:  tubName,
+		Settings: pgtype.Hstore{"embed_model": &model},
+	}.WithRequiredDocumentHeaders("source-id", "title"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ragnarClient.DeleteTub(ctx, tubName)
+	if got := tub.Settings["embed_model"]; got == nil || *got != model {
+		t.Fatalf("create response settings: %v", tub.Settings)
+	}
+	fetched, err := ragnarClient.GetTub(ctx, tubName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := fetched.Settings["embed_model"]; got == nil || *got != model {
+		t.Fatalf("stored settings: %v", fetched.Settings)
+	}
+	if req := fetched.GetRequiredDocumentHeaders(); len(req) != 2 || req[0] != "source-id" {
+		t.Fatalf("required headers: %v", req)
+	}
+	// The required headers apply from the first document.
+	_, err = ragnarClient.CreateTubDocument(ctx, tubName, strings.NewReader("x"), "text/plain", map[string]string{"x-ragnar-title": "only title"})
+	if err == nil {
+		t.Fatal("expected a document without source-id to be refused")
+	}
+}
+
+// Header-only updates keep the content and drop nothing but what is asked.
+func TestUpdateTubDocumentHeaders(t *testing.T) {
+	ctx := context.Background()
+	doc, err := ragnarClient.CreateTubDocument(ctx, tubTestName, strings.NewReader("header test content"), "text/plain", map[string]string{
+		"x-ragnar-filename":    "headers.txt",
+		"x-ragnar-mfn-news-id": "headers-1",
+		"x-ragnar-disabled":    "false",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ragnarClient.DeleteTubDocument(ctx, tubTestName, doc.DocumentId)
+
+	updated, err := ragnarClient.UpdateTubDocumentHeaders(ctx, tubTestName, doc.DocumentId, map[string]*string{
+		"disabled":         ptr("true"),
+		"X-Ragnar-Comment": ptr("prefix and case are normalised"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := updated.Headers["disabled"]; got == nil || *got != "true" {
+		t.Fatalf("disabled header: %v", updated.Headers)
+	}
+	if got := updated.Headers["comment"]; got == nil || *got != "prefix and case are normalised" {
+		t.Fatalf("comment header: %v", updated.Headers)
+	}
+	if got := updated.Headers["filename"]; got == nil || *got != "headers.txt" {
+		t.Fatalf("untouched header lost: %v", updated.Headers)
+	}
+	if got := updated.Headers["content-type"]; got == nil || *got != "text/plain" {
+		t.Fatalf("system header lost: %v", updated.Headers)
+	}
+	if !updated.UpdatedAt.After(doc.UpdatedAt) {
+		t.Fatalf("updated_at not bumped: %v vs %v", updated.UpdatedAt, doc.UpdatedAt)
+	}
+
+	// Content is untouched.
+	body, err := ragnarClient.DownloadTubDocument(ctx, tubTestName, doc.DocumentId)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content, _ := io.ReadAll(body)
+	body.Close()
+	if string(content) != "header test content" {
+		t.Fatalf("content changed: %q", content)
+	}
+
+	// Null removes; the tub's required header (mfn-news-id, see TestUpdateTub) cannot go.
+	updated, err = ragnarClient.UpdateTubDocumentHeaders(ctx, tubTestName, doc.DocumentId, map[string]*string{"comment": nil})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := updated.Headers["comment"]; ok {
+		t.Fatalf("comment not removed: %v", updated.Headers)
+	}
+	if _, err := ragnarClient.UpdateTubDocumentHeaders(ctx, tubTestName, doc.DocumentId, map[string]*string{"mfn-news-id": nil}); err == nil {
+		t.Fatal("expected removing a required header to be refused")
+	}
+	if _, err := ragnarClient.UpdateTubDocumentHeaders(ctx, tubTestName, doc.DocumentId, map[string]*string{"content-type": ptr("text/html")}); err == nil {
+		t.Fatal("expected changing content-type to be refused")
+	}
+	if _, err := ragnarClient.UpdateTubDocumentHeaders(ctx, tubTestName, "doc_00000000-0000-0000-0000-000000000000", map[string]*string{"a": ptr("b")}); err == nil {
+		t.Fatal("expected unknown document to fail")
+	}
+	if _, err := ragnarUnauthorizedClient.UpdateTubDocumentHeaders(ctx, tubTestName, doc.DocumentId, map[string]*string{"a": ptr("b")}); err == nil {
+		t.Fatal("expected unauthorized client to be refused")
+	}
+}
+
+func ptr(s string) *string { return &s }

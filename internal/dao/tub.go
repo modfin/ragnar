@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/jackc/pgx/v5/pgtype"
 	"regexp"
 	"strings"
 
@@ -86,7 +87,14 @@ func (d *DAO) CreateTub(ctx context.Context, tub ragnar.Tub) (ragnar.Tub, error)
 
 	err = d.txx(ctx, func(tx *sqlx.Tx) error {
 
-		err := tx.Get(&tub, `INSERT INTO "public"."tub" (tub_name) VALUES ($1) RETURNING *`, tub.TubName)
+		// Settings (embed model, required headers, ...) given at creation are
+		// stored right away, so a caller does not need a follow-up update.
+		settings := tub.Settings
+		if settings == nil {
+			settings = pgtype.Hstore{}
+		}
+		err := tx.Get(&tub, `INSERT INTO "public"."tub" (tub_name, settings)
+			 VALUES ($1, CAST(''||$2||'' AS HSTORE)) RETURNING *`, tub.TubName, settings)
 		if err != nil {
 			return fmt.Errorf("error creating tub: %w", err)
 		}
