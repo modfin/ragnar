@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"github.com/modfin/bellman/models/embed"
 	"github.com/modfin/bellman/services/voyageai"
+	"math"
 	"net/http"
 	"strconv"
 
 	"github.com/modfin/ragnar"
+	"github.com/modfin/ragnar/internal/dao"
 	"github.com/modfin/strut"
 )
 
@@ -48,6 +50,15 @@ func (web *Web) SearchXNN(ctx context.Context) strut.Response[[]ragnar.Chunk] {
 			fmt.Sprintf("Invalid JSON format in 'filter' query parameter, request_id: %s", requestId))
 	}
 
+	maxPerDocument, err := optionalIntParam(ctx, "max_per_document", 0, math.MaxInt)
+	if err != nil {
+		return strut.RespondError[string](http.StatusBadRequest, err.Error())
+	}
+	neighbours, err := optionalIntParam(ctx, "neighbours", 0, ragnar.MaxSearchNeighbours)
+	if err != nil {
+		return strut.RespondError[string](http.StatusBadRequest, err.Error())
+	}
+
 	web.log.Debug("SearchXNN", "tub", tub, "query", query, "limit", limit, "offset", offset)
 
 	embedModel := voyageai.EmbedModel_voyage_context_3 // default model
@@ -65,11 +76,32 @@ func (web *Web) SearchXNN(ctx context.Context) strut.Response[[]ragnar.Chunk] {
 		return strut.RespondError[string](http.StatusInternalServerError, fmt.Sprintf("Failed to embed query"))
 	}
 
-	chunks, err := web.db.QueryChunkEmbeds(ctx, tub.TubName, embedModel, filter, queryVector, limit, offset)
+	chunks, err := web.db.SearchChunks(ctx, tub.TubName, embedModel, dao.SearchParams{
+		Vector:         queryVector,
+		Filter:         filter,
+		Limit:          limit,
+		Offset:         offset,
+		MaxPerDocument: maxPerDocument,
+		Neighbours:     neighbours,
+	})
 	if err != nil {
 		web.log.Error("failed to query chunk embeds", "error", err)
 		return strut.RespondError[string](http.StatusInternalServerError, fmt.Sprintf("Failed to query chunk embeds"))
 	}
 
 	return strut.RespondOk(chunks)
+}
+
+// optionalIntParam reads an integer query parameter that defaults to lo when
+// absent, and must lie within [lo, hi] when given.
+func optionalIntParam(ctx context.Context, name string, lo, hi int) (int, error) {
+	raw := strut.QueryParam(ctx, name)
+	if raw == "" {
+		return lo, nil
+	}
+	v, err := strconv.Atoi(raw)
+	if err != nil || v < lo || v > hi {
+		return 0, fmt.Errorf("invalid %s %q, must be an integer from %d to %d", name, raw, lo, hi)
+	}
+	return v, nil
 }

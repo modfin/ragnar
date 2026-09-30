@@ -542,6 +542,48 @@ func TestSearchTubDocumentChunks(t *testing.T) {
 	}
 }
 
+func TestSearchTubDocumentChunksWithOptions(t *testing.T) {
+	query := "planeras till onsdagen den 24 september 2025"
+	plain, err := ragnarClient.SearchTubDocumentChunks(context.Background(), tubTestName, query, nil, 3, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plain) == 0 || plain[0].Score == nil || len(plain[0].Headers) == 0 {
+		t.Fatal("expected hits with score and headers", plain)
+	}
+
+	// Zero options search exactly like SearchTubDocumentChunks.
+	same, err := ragnarClient.SearchTubDocumentChunksWithOptions(context.Background(), tubTestName, query, SearchOptions{Limit: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(same) != len(plain) || same[0].DocumentId != plain[0].DocumentId || same[0].ChunkId != plain[0].ChunkId {
+		t.Fatal("expected the same hits as SearchTubDocumentChunks")
+	}
+
+	capped, err := ragnarClient.SearchTubDocumentChunksWithOptions(context.Background(), tubTestName, query, SearchOptions{
+		Limit: 5, MaxPerDocument: 1, Neighbours: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]bool{}
+	for _, hit := range capped {
+		if seen[hit.DocumentId] {
+			t.Fatal("expected at most one hit per document")
+		}
+		seen[hit.DocumentId] = true
+		if hit.ChunkId > 0 && len(hit.Before) != 1 {
+			t.Fatal("expected the chunk before the hit", hit)
+		}
+	}
+
+	_, err = ragnarClient.SearchTubDocumentChunksWithOptions(context.Background(), tubTestName, query, SearchOptions{Neighbours: MaxSearchNeighbours + 1})
+	if err == nil || !strings.Contains(err.Error(), "HTTP 400") {
+		t.Fatal("expected too many neighbours to be rejected", err)
+	}
+}
+
 func TestDownloadMarkdownDocument(t *testing.T) {
 	docs, err := ragnarClient.GetTubDocuments(context.Background(), tubTestName, nil, nil, 10, 0)
 	if err != nil {

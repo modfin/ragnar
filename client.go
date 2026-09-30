@@ -34,6 +34,7 @@ type Client interface {
 	GetTubDocumentChunks(ctx context.Context, tub, documentId string, limit, offset int) ([]Chunk, error)                                                                                            // Get /tubs/{tub}/documents/{document_id}/chunks
 	GetTubDocumentChunk(ctx context.Context, tub, documentId string, index int) (Chunk, error)                                                                                                       // Get /tubs/{tub}/document/{document_id}/chunks/{index}
 	SearchTubDocumentChunks(ctx context.Context, tub, query string, documentFilter DocumentFilter, limit, offset int) ([]Chunk, error)                                                               // Get /search/xnn/{tub}
+	SearchTubDocumentChunksWithOptions(ctx context.Context, tub, query string, opts SearchOptions) ([]Chunk, error)                                                                                  // Get /search/xnn/{tub}
 }
 
 type httpClient struct {
@@ -326,22 +327,34 @@ func (c *httpClient) GetTubDocumentChunk(ctx context.Context, tub, documentId st
 }
 
 func (c *httpClient) SearchTubDocumentChunks(ctx context.Context, tub, query string, documentFilter DocumentFilter, limit, offset int) ([]Chunk, error) {
+	return c.SearchTubDocumentChunksWithOptions(ctx, tub, query, SearchOptions{Filter: documentFilter, Limit: limit, Offset: offset})
+}
+
+// SearchTubDocumentChunksWithOptions searches like SearchTubDocumentChunks and
+// can also cap hits per document and include each hit's neighbouring chunks.
+func (c *httpClient) SearchTubDocumentChunksWithOptions(ctx context.Context, tub, query string, opts SearchOptions) ([]Chunk, error) {
 	path := fmt.Sprintf("/search/xnn/%s", url.PathEscape(tub))
 
 	params := map[string]string{}
 	params["q"] = query
-	if limit > 0 {
-		params["limit"] = strconv.Itoa(limit)
+	if opts.Limit > 0 {
+		params["limit"] = strconv.Itoa(opts.Limit)
 	}
-	if offset > 0 {
-		params["offset"] = strconv.Itoa(offset)
+	if opts.Offset > 0 {
+		params["offset"] = strconv.Itoa(opts.Offset)
 	}
-	if documentFilter != nil && len(documentFilter) > 0 {
-		filterData, err := json.Marshal(documentFilter)
+	if len(opts.Filter) > 0 {
+		filterData, err := json.Marshal(opts.Filter)
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal filter: %w", err)
 		}
 		params["filter"] = string(filterData)
+	}
+	if opts.MaxPerDocument > 0 {
+		params["max_per_document"] = strconv.Itoa(opts.MaxPerDocument)
+	}
+	if opts.Neighbours > 0 {
+		params["neighbours"] = strconv.Itoa(opts.Neighbours)
 	}
 
 	var chunks []Chunk

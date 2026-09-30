@@ -364,6 +364,35 @@ type Chunk struct {
 
 	CreatedAt time.Time `db:"created_at" json:"created_at" json-description:"Created at"`
 	UpdatedAt time.Time `db:"updated_at" json:"updated_at" json-description:"Updated at"`
+
+	// Set on search hits only.
+	Score   *float64         `db:"score" json:"score,omitempty" json-description:"Cosine similarity to the query, higher is better"`
+	Headers pgtype.Hstore    `db:"headers" json:"headers,omitempty" json-description:"Headers of the chunk's document"`
+	Before  []NeighbourChunk `db:"-" json:"before,omitempty" json-description:"Chunks just before the hit in its document, in order, when neighbours was requested"`
+	After   []NeighbourChunk `db:"-" json:"after,omitempty" json-description:"Chunks just after the hit in its document, in order, when neighbours was requested"`
+}
+
+// NeighbourChunk is a chunk next to a search hit, in the same document.
+type NeighbourChunk struct {
+	ChunkId int    `db:"chunk_id" json:"chunk_id" json-description:"Chunk identifier"`
+	Content string `db:"content" json:"content" json-description:"Chunk content"`
+}
+
+// MaxSearchNeighbours is the largest SearchOptions.Neighbours allowed.
+const MaxSearchNeighbours = 5
+
+// SearchOptions are the optional parts of a search. The zero value searches
+// like SearchTubDocumentChunks with no filter and the server's default limit.
+type SearchOptions struct {
+	Filter DocumentFilter
+	Limit  int
+	Offset int
+	// MaxPerDocument caps how many hits one document may contribute; 0 means
+	// no cap.
+	MaxPerDocument int
+	// Neighbours returns up to this many chunks before and after each hit, in
+	// Before and After; 0 means none. At most MaxSearchNeighbours.
+	Neighbours int
 }
 
 type ChunkReference struct {

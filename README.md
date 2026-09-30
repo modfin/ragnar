@@ -287,6 +287,34 @@ if err != nil {
 }
 ```
 
+Every hit carries a `Score` (higher is better) and its document's `Headers`,
+so citing a hit needs no extra document lookup.
+
+#### Per-document caps and neighbouring chunks
+
+`SearchTubDocumentChunksWithOptions` takes the same search plus options. Left
+at their zero values, results are the same as `SearchTubDocumentChunks`.
+
+```go
+hits, err := client.SearchTubDocumentChunksWithOptions(ctx, "my-documents",
+    "What is the project timeline?", ragnar.SearchOptions{
+        Limit:          10,
+        Filter:         ragnar.NewDocumentFilter().WithEqual("department", "research"),
+        MaxPerDocument: 2, // at most 2 hits per document
+        Neighbours:     1, // include the chunk before and after each hit
+    })
+for _, hit := range hits {
+    fmt.Println(*hit.Score, *hit.Headers["x-ragnar-title"], hit.Content)
+    for _, n := range hit.After {
+        fmt.Println("  next:", n.Content)
+    }
+}
+```
+
+- **`MaxPerDocument`** stops one long document from filling the page.
+- **`Neighbours`** (up to 5) returns the chunks around each hit in `Before` and
+  `After`, for more context than the matched chunk alone.
+
 ### 6. Listing, Filtering, and Sorting Documents
 
 ```go
@@ -422,6 +450,6 @@ The service provides a complete REST API:
 - `GET /tubs/{tub}/documents/{id}/download/markdown` - Download markdown
 - `GET /tubs/{tub}/documents/{id}/status` - Processing status
 - `GET /tubs/{tub}/documents/{id}/chunks` - Get chunks
-- `GET /search/xnn/{tub}` - Vector search
+- `GET /search/xnn/{tub}` - Vector search (`q`, `filter`, `limit`, `offset`, `max_per_document`, `neighbours`)
 
 OpenAPI documentation available at `/.well-known/openapi.json`

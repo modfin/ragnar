@@ -275,7 +275,9 @@ required headers cannot be removed.`),
 		with.QueryParam[int]("limit", "Optional limit query"),
 		with.QueryParam[string]("filter", "Optional filter chunk documents query in flat JSON format"),
 		with.QueryParam[int]("offset", "Optional offset query"),
-		with.ResponseDescription(200, "The chunks best matching the search"),
+		with.QueryParam[int]("max_per_document", "Optional cap on hits from one document, 0 (default) means no cap"),
+		with.QueryParam[int]("neighbours", "Optional number of chunks before and after each hit to include, 0 (default) to 5"),
+		with.ResponseDescription(200, "The chunks best matching the search, best first, with score and document headers"),
 	)
 
 	//strut.Get(s, "/search/agent", web.SearchAgent,
