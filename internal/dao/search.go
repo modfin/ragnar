@@ -29,6 +29,10 @@ const (
 	maxCandidates = 1000
 	// hnswDefaultEfSearch is pgvector's default hnsw.ef_search.
 	hnswDefaultEfSearch = 40
+	// filteredMaxScanTuples bounds an iterative index scan under a filter.
+	// A filter so selective that this many chunks yield no full page matches
+	// few enough chunks to rank exactly instead.
+	filteredMaxScanTuples = 20000
 )
 
 // SearchChunks returns the chunks most similar to the query vector, best
@@ -76,20 +80,63 @@ func (d *DAO) SearchChunks(ctx context.Context, tubname string, model embed.Mode
 			}
 		}
 
-		args := []any{vectorToSQLArray(p.Vector)}
-		arg := func(v any) string {
-			args = append(args, v)
-			return fmt.Sprintf("$%d", len(args))
-		}
-		filterSQL, filterArgs, err := documentFilterSQL(p.Filter, len(args)+1)
+		filterSQL, filterArgs, err := documentFilterSQL(p.Filter, 2)
 		if err != nil {
 			return err
 		}
-		args = append(args, filterArgs...)
+		filtered := filterSQL != ""
+		// Without iterative scans HNSW returns ef_search chunks in total and
+		// the filter is applied to those, so a filter on a small part of the
+		// tub found nothing.
+		if filtered {
+			for _, set := range []string{"SET LOCAL hnsw.iterative_scan = strict_order", fmt.Sprintf("SET LOCAL hnsw.max_scan_tuples = %d", filteredMaxScanTuples)} {
+				if _, err := tx.ExecContext(ctx, set); err != nil {
+					return fmt.Errorf("error enabling iterative index scans: %w", err)
+				}
+			}
+		}
 
-		distance := fmt.Sprintf(`chunk."%s" <=> CAST($1 AS VECTOR(%d))`, colName, model.OutputDimensions)
-		maxPerDocument := arg(p.MaxPerDocument)
-		q := fmt.Sprintf(`
+		query := func(exact bool) error {
+			chunks = nil
+			args := []any{vectorToSQLArray(p.Vector)}
+			args = append(args, filterArgs...)
+			arg := func(v any) string {
+				args = append(args, v)
+				return fmt.Sprintf("$%d", len(args))
+			}
+			distance := fmt.Sprintf(`chunk."%s" <=> CAST($1 AS VECTOR(%d))`, colName, model.OutputDimensions)
+			// The index only serves an ORDER BY on the bare distance operator.
+			order := distance
+			if exact {
+				order = "(" + distance + ") + 0"
+			}
+			maxPerDocument := arg(p.MaxPerDocument)
+			q := fmt.Sprintf(searchSQL, distance, schema, schema, colName, filterSQL, order, arg(candidates),
+				schema, schema, maxPerDocument, maxPerDocument, arg(p.Limit), arg(p.Offset))
+			return tx.SelectContext(ctx, &chunks, q, args...)
+		}
+		if err := query(false); err != nil {
+			return fmt.Errorf("error searching chunks: %w", err)
+		}
+		// A short page under a filter is either the end of the matches or an
+		// index scan that gave up; ranking the matching chunks exactly tells.
+		if filtered && len(chunks) < p.Limit {
+			if err := query(true); err != nil {
+				return fmt.Errorf("error searching chunks exactly: %w", err)
+			}
+		}
+		if p.Neighbours > 0 && len(chunks) > 0 {
+			return addNeighbours(ctx, tx, schema, chunks, p.Neighbours)
+		}
+		return nil
+	})
+	if err != nil {
+		return chunks, err
+	}
+	return chunks, nil
+}
+
+const searchSQL = `
 WITH candidates AS (
 	SELECT chunk.document_id, chunk.chunk_id, CAST(1 - (%s) AS FLOAT8) AS score
 	FROM "%s".chunk
@@ -112,23 +159,7 @@ INNER JOIN "%s".document ON document.document_id = chunk.document_id
 WHERE CAST(%s AS INT) = 0 OR ranked.document_rank <= %s
 ORDER BY ranked.score DESC, chunk.document_id, chunk.chunk_id
 LIMIT %s
-OFFSET %s`, distance, schema, schema, colName, filterSQL, distance, arg(candidates),
-			schema, schema, maxPerDocument, maxPerDocument, arg(p.Limit), arg(p.Offset))
-
-		err = tx.SelectContext(ctx, &chunks, q, args...)
-		if err != nil {
-			return fmt.Errorf("error searching chunks: %w", err)
-		}
-		if p.Neighbours > 0 && len(chunks) > 0 {
-			return addNeighbours(ctx, tx, schema, chunks, p.Neighbours)
-		}
-		return nil
-	})
-	if err != nil {
-		return chunks, err
-	}
-	return chunks, nil
-}
+OFFSET %s`
 
 // addNeighbours fills Before and After on each hit with the chunks up to n
 // positions away in the same document.

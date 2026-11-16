@@ -25,7 +25,7 @@ Ragnar consists of several key components:
 - **Chunker**: Splits documents into manageable chunks for processing
 - **AI Integration**: Embedding generation via Bellman AI platform
 - **Storage Layer**: MinIO/S3-compatible object storage
-- **Database**: PostgreSQL for metadata and chunk storage
+- **Database**: PostgreSQL with pgvector 0.8 or later (filtered search uses iterative index scans) and hstore, for metadata and chunk storage
 - **Processing Pipeline**: Background job processing for document workflows
 
 ## 🛠️ Installation & Setup
